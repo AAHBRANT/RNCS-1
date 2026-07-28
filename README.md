@@ -29,9 +29,9 @@ Para a hospedagem definitiva na Vercel, a camada de persistência deverá aponta
 
 ## Obras iniciais
 
-- Parque Socioambiental do Roger
-- Parque Linear do Cuiá
-- Parque Beira Rio
+- Parque do Roger - Fase II
+- Ponte Rio Cuiá
+- Compl. Beira Rio
 
 ## Desenvolvimento local
 

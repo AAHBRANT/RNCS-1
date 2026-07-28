@@ -3,10 +3,16 @@ import { getDb } from "../../../db";
 import { auditLog, rncs, works } from "../../../db/schema";
 
 const initialWorks = [
-  "Parque Socioambiental do Roger",
-  "Parque Linear do Cuiá",
-  "Parque Beira Rio",
+  "Parque do Roger - Fase II",
+  "Ponte Rio Cuiá",
+  "Compl. Beira Rio",
 ];
+
+const renamedWorks = [
+  ["Parque Socioambiental do Roger", "Parque do Roger - Fase II"],
+  ["Parque Linear do Cuiá", "Ponte Rio Cuiá"],
+  ["Parque Beira Rio", "Compl. Beira Rio"],
+] as const;
 
 const editableFields = [
   "workId", "number", "year", "description", "type", "receivedAt", "dueAt",
@@ -25,6 +31,9 @@ function addBusinessDays(dateValue: string, days = 5) {
 
 async function ensureWorks() {
   const db = getDb();
+  for (const [oldName, newName] of renamedWorks) {
+    await db.update(works).set({ name: newName }).where(eq(works.name, oldName));
+  }
   for (const name of initialWorks) {
     await db.insert(works).values({ name }).onConflictDoNothing();
   }
