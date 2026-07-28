@@ -1,6 +1,6 @@
 # Controle de RNC
 
-Aplicação web para controlar Relatórios de Não Conformidade por obra, número e ano. A primeira versão opera com cadastro manual e está preparada para futura integração com uma conta individual do Outlook.
+Aplicação web para controlar Relatórios de Não Conformidade por obra, número e ano, com sincronização de uma conta individual do Outlook pela Microsoft Graph.
 
 ## Funcionalidades
 
@@ -24,7 +24,9 @@ Aplicação web para controlar Relatórios de Não Conformidade por obra, númer
 - PostgreSQL serverless, recomendado via Neon no Marketplace da Vercel;
 - Drizzle ORM;
 - credenciais somente em variáveis de ambiente;
-- futura integração Microsoft Graph isolada do frontend.
+- integração Microsoft Graph isolada do frontend, com OAuth 2.0;
+- refresh token criptografado no PostgreSQL com AES-256-GCM;
+- leitura incremental da Caixa de Entrada, suas subpastas e Itens Enviados.
 
 O banco e as tabelas são inicializados com segurança no primeiro acesso. Nenhum token ou segredo é enviado ao navegador.
 
@@ -61,13 +63,28 @@ Preencha `DATABASE_URL` em `.env.local`.
 ```env
 DATABASE_URL=
 
-# Futuras credenciais Microsoft Graph
+# Microsoft Graph
 MICROSOFT_CLIENT_ID=
 MICROSOFT_CLIENT_SECRET=
-MICROSOFT_TENANT_ID=
-MICROSOFT_REDIRECT_URI=
+MICROSOFT_TENANT_ID=common
+MICROSOFT_REDIRECT_URI=https://rncs-1.vercel.app/api/outlook/callback
 OUTLOOK_ACCOUNT_EMAIL=
+MICROSOFT_TOKEN_ENCRYPTION_KEY=
+OUTLOOK_INITIAL_SYNC_DAYS=365
 ```
+
+`MICROSOFT_TOKEN_ENCRYPTION_KEY` deve ser um valor aleatório de 32 bytes codificado em Base64. Todas as variáveis acima devem ficar somente no backend/Vercel e nunca usar o prefixo `NEXT_PUBLIC_`.
+
+## Conectar o Outlook
+
+1. Registre uma aplicação Web no Microsoft Entra.
+2. Autorize contas Microsoft pessoais e organizacionais, conforme a conta escolhida.
+3. Cadastre a URI de redirecionamento `https://rncs-1.vercel.app/api/outlook/callback`.
+4. Adicione permissões delegadas Microsoft Graph: `User.Read` e `Mail.Read`.
+5. Crie um segredo do cliente e configure as variáveis na Vercel.
+6. Faça um novo deployment e clique em **Conectar Outlook** uma única vez.
+
+O sistema solicita `offline_access` para renovar o acesso no backend. A aplicação não envia e-mails, não altera mensagens e não lê anexos; apenas registra se a mensagem possui anexos.
 
 ## Regras importantes
 
@@ -75,4 +92,6 @@ OUTLOOK_ACCOUNT_EMAIL=
 - recebimento, envio e retorno preenchem datas diferentes;
 - observações não são preenchidas automaticamente;
 - feriados ainda não entram no cálculo;
-- o botão **Atualizar e-mails** permanece desabilitado até a integração Graph.
+- mensagens só são associadas automaticamente quando obra, número e ano da RNC podem ser identificados;
+- a sincronização pública possui intervalo mínimo de um minuto;
+- o controle de edição por usuário será implementado depois da validação da integração Outlook.

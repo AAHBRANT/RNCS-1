@@ -73,4 +73,23 @@ async function initializeDatabase() {
     changed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`;
   await sql`CREATE INDEX IF NOT EXISTS audit_rnc_idx ON audit_log(rnc_id)`;
+  await sql`CREATE TABLE IF NOT EXISTS outlook_connections (
+    id SERIAL PRIMARY KEY,
+    account_email TEXT NOT NULL UNIQUE,
+    encrypted_refresh_token TEXT NOT NULL,
+    connected_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_sync_at TIMESTAMPTZ,
+    last_sync_status TEXT,
+    last_sync_message TEXT
+  )`;
+  await sql`CREATE TABLE IF NOT EXISTS outlook_sync_folders (
+    id SERIAL PRIMARY KEY,
+    connection_id INTEGER NOT NULL REFERENCES outlook_connections(id),
+    folder_id TEXT NOT NULL,
+    folder_name TEXT NOT NULL,
+    folder_kind TEXT NOT NULL,
+    delta_link TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT outlook_sync_folder_unique UNIQUE(connection_id, folder_id)
+  )`;
 }

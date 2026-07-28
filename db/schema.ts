@@ -53,3 +53,25 @@ export const auditLog = pgTable("audit_log", {
   newValue: text("new_value"),
   changedAt: timestamp("changed_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [index("audit_rnc_idx").on(table.rncId)]);
+
+export const outlookConnections = pgTable("outlook_connections", {
+  id: serial("id").primaryKey(),
+  accountEmail: text("account_email").notNull().unique(),
+  encryptedRefreshToken: text("encrypted_refresh_token").notNull(),
+  connectedAt: timestamp("connected_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  lastSyncAt: timestamp("last_sync_at", { withTimezone: true, mode: "string" }),
+  lastSyncStatus: text("last_sync_status"),
+  lastSyncMessage: text("last_sync_message"),
+});
+
+export const outlookSyncFolders = pgTable("outlook_sync_folders", {
+  id: serial("id").primaryKey(),
+  connectionId: integer("connection_id").notNull().references(() => outlookConnections.id),
+  folderId: text("folder_id").notNull(),
+  folderName: text("folder_name").notNull(),
+  folderKind: text("folder_kind").notNull(),
+  deltaLink: text("delta_link"),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("outlook_sync_folder_unique").on(table.connectionId, table.folderId),
+]);

@@ -10,6 +10,11 @@ type Rnc = {
   responseOwner: string; analysisOwner: string; updatedAt: string;
 };
 type Audit = { id: number; field: string; oldValue: string | null; newValue: string | null; changedAt: string; userName: string };
+type OutlookStatus = {
+  configured: boolean;
+  connected: boolean;
+  connection?: { lastSyncAt?: string | null; lastSyncMessage?: string | null };
+};
 
 const statusOptions = ["Recebida", "Em elaboração", "Respondida", "Aprovada", "Reprovada", "Reaberta", "Não identificado"];
 const typeOptions = ["Segurança do Trabalho", "Ambiental", "Qualidade", "Projeto", "Execução", "Documental", "Outro", "A classificar"];
@@ -62,6 +67,8 @@ export function RncApp() {
   const [selected, setSelected] = useState<Rnc | null>(null);
   const [history, setHistory] = useState<Audit[]>([]);
   const [editing, setEditing] = useState<Rnc | null>(null);
+  const [outlook, setOutlook] = useState<OutlookStatus>({ configured: false, connected: false });
+  const [syncing, setSyncing] = useState(false);
 
   async function load() {
     setBusy(true);
@@ -88,6 +95,43 @@ export function RncApp() {
       });
     return () => { active = false; };
   }, []);
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    const oauthNotice = query.get("outlook") === "connected"
+      ? "Outlook conectado com sucesso. Clique em Atualizar e-mails."
+      : query.get("outlook") === "error"
+        ? query.get("message") || "Não foi possível conectar o Outlook."
+        : "";
+    if (oauthNotice) queueMicrotask(() => setNotice(oauthNotice));
+    if (query.has("outlook")) window.history.replaceState({}, "", window.location.pathname);
+    fetch("/api/outlook/status")
+      .then((response) => response.json())
+      .then((data) => { if (!data.error) setOutlook(data); })
+      .catch(() => undefined);
+  }, []);
+
+  async function syncEmails() {
+    if (!outlook.connected) {
+      window.location.href = "/api/outlook/connect";
+      return;
+    }
+    setSyncing(true);
+    try {
+      const response = await fetch("/api/outlook/sync", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Falha ao atualizar e-mails.");
+      setNotice(data.message);
+      setOutlook((current) => ({
+        ...current,
+        connection: { ...current.connection, lastSyncAt: new Date().toISOString(), lastSyncMessage: data.message },
+      }));
+      await load();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Falha ao atualizar e-mails.");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   const filtered = useMemo(() => rows.filter((r) => {
     const term = search.toLocaleLowerCase("pt-BR");
@@ -155,8 +199,15 @@ export function RncApp() {
       <header className="topbar">
         <div className="brand"><span className="brand-mark">RN</span><div><strong>Controle de RNC</strong><small>Gestão de não conformidades</small></div></div>
         <div className="header-actions">
-          <span className="sync"><i /> Operação manual</span>
-          <button className="button secondary" disabled title="Disponível quando o Outlook for conectado">↻ Atualizar e-mails</button>
+          <span className="sync"><i /> {outlook.connected ? "Outlook conectado" : "Operação manual"}</span>
+          <button
+            className="button secondary"
+            onClick={syncEmails}
+            disabled={syncing || (!outlook.configured && !outlook.connected)}
+            title={!outlook.configured ? "Configure as credenciais Microsoft na Vercel" : undefined}
+          >
+            {syncing ? "Atualizando…" : outlook.connected ? "↻ Atualizar e-mails" : "Conectar Outlook"}
+          </button>
           <button className="button primary" onClick={() => setShowForm(true)}>＋ Nova RNC</button>
         </div>
       </header>
