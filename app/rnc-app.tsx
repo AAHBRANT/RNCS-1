@@ -71,7 +71,23 @@ export function RncApp() {
     else { setWorks(data.works); setRows(data.rncs); }
     setBusy(false);
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    let active = true;
+    fetch("/api/rncs")
+      .then(async (response) => ({ response, data: await response.json() }))
+      .then(({ response, data }) => {
+        if (!active) return;
+        if (!response.ok) setNotice(data.error || "Não foi possível carregar os dados.");
+        else { setWorks(data.works); setRows(data.rncs); }
+      })
+      .catch(() => {
+        if (active) setNotice("Não foi possível carregar os dados.");
+      })
+      .finally(() => {
+        if (active) setBusy(false);
+      });
+    return () => { active = false; };
+  }, []);
 
   const filtered = useMemo(() => rows.filter((r) => {
     const term = search.toLocaleLowerCase("pt-BR");

@@ -1,5 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
-import { getDb } from "../../../db";
+import { ensureDatabase, getDb } from "../../../db";
 import { auditLog, rncs, works } from "../../../db/schema";
 
 const initialWorks = [
@@ -30,6 +30,7 @@ function addBusinessDays(dateValue: string, days = 5) {
 }
 
 async function ensureWorks() {
+  await ensureDatabase();
   const db = getDb();
   for (const [oldName, newName] of renamedWorks) {
     await db.update(works).set({ name: newName }).where(eq(works.name, oldName));
