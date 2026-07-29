@@ -43,8 +43,16 @@ function businessDayDelta(fromValue: string, toValue: string) {
   }
   return count;
 }
+function todayInBrazil() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
 function deadlineResult(rnc: Rnc) {
-  const comparison = rnc.sentAt || new Date().toISOString().slice(0, 10);
+  const comparison = rnc.sentAt || todayInBrazil();
   const delta = businessDayDelta(rnc.dueAt, comparison);
   if (rnc.sentAt) {
     if (delta === 0) return { delta, label: "Respondida no prazo" };
@@ -88,13 +96,18 @@ export function RncApp() {
   const [syncing, setSyncing] = useState(false);
   const [responding, setResponding] = useState<Rnc | null>(null);
   const [directive, setDirective] = useState("");
+  const [updatedLabel, setUpdatedLabel] = useState("Carregando…");
 
   async function load() {
     setBusy(true);
     const response = await fetch("/api/rncs");
     const data = await response.json();
     if (!response.ok) setNotice(data.error || "Não foi possível carregar os dados.");
-    else { setWorks(data.works); setRows(data.rncs); }
+    else {
+      setWorks(data.works);
+      setRows(data.rncs);
+      setUpdatedLabel(new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date()));
+    }
     setBusy(false);
   }
   useEffect(() => {
@@ -104,7 +117,11 @@ export function RncApp() {
       .then(({ response, data }) => {
         if (!active) return;
         if (!response.ok) setNotice(data.error || "Não foi possível carregar os dados.");
-        else { setWorks(data.works); setRows(data.rncs); }
+        else {
+          setWorks(data.works);
+          setRows(data.rncs);
+          setUpdatedLabel(new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date()));
+        }
       })
       .catch(() => {
         if (active) setNotice("Não foi possível carregar os dados.");
@@ -287,7 +304,7 @@ export function RncApp() {
           <select aria-label="Filtrar por tipo" value={type} onChange={(e) => setType(e.target.value)}><option value="all">Todos os tipos</option>{typeOptions.map((t) => <option key={t}>{t}</option>)}</select>
           <select aria-label="Filtrar por ano" value={year} onChange={(e) => setYear(e.target.value)}><option value="all">Todos os anos</option>{years.map((y) => <option key={y}>{y}</option>)}</select>
         </div>
-        <div className="table-meta"><strong>{filtered.length} registros</strong><span>Atualização local: {new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date())}</span></div>
+        <div className="table-meta"><strong>{filtered.length} registros</strong><span>Atualização local: {updatedLabel}</span></div>
         <div className="table-scroll">
           <table>
             <thead><tr><th>Item</th><th>Nº RNC</th><th>Ano</th><th>Descrição</th><th>Tipo</th><th>Recebimento</th><th>Prazo de envio</th><th>Envio</th><th>Retorno</th><th>Status</th><th>Responsável</th><th /></tr></thead>
