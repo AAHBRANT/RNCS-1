@@ -8,15 +8,18 @@ type Rnc = {
   description: string; type: string; receivedAt: string; dueAt: string;
   sentAt: string | null; returnedAt: string | null; status: string; notes: string;
   responseOwner: string; analysisOwner: string; updatedAt: string;
+  fieldSources: string; manualFields: string; sourceSummary: string;
 };
 type Audit = { id: number; field: string; oldValue: string | null; newValue: string | null; changedAt: string; userName: string };
+type EmailEvent = { id: number; eventType: string; sender: string | null; recipients: string | null; subject: string | null; summary: string | null; occurredAt: string; folderName: string | null; attachmentMetadata: string | null };
+type Conflict = { id: number; field: string; candidateValues: string; status: string };
 type OutlookStatus = {
   configured: boolean;
   connected: boolean;
   connection?: { lastSyncAt?: string | null; lastSyncMessage?: string | null };
 };
 
-const statusOptions = ["Recebida", "Em elaboração", "Respondida", "Aprovada", "Reprovada", "Reaberta", "Não identificado"];
+const statusOptions = ["Recebida", "Em elaboração", "Respondida", "Aprovada", "Reprovada", "Reaberta", "Retorno recebido — status a confirmar", "Não identificado"];
 const typeOptions = ["Segurança do Trabalho", "Ambiental", "Qualidade", "Projeto", "Execução", "Documental", "Outro", "A classificar"];
 const labelByField: Record<string, string> = {
   registro: "Registro", workId: "Obra", number: "Nº RNC", year: "Ano",
@@ -31,25 +34,37 @@ function fmt(value?: string | null) {
   const date = value.length === 10 ? parseLocal(value) : new Date(value);
   return new Intl.DateTimeFormat("pt-BR").format(date);
 }
-function businessDaysUntil(dateValue: string) {
-  const today = new Date(); today.setHours(12, 0, 0, 0);
-  const target = parseLocal(dateValue);
-  const direction = target >= today ? 1 : -1;
-  let count = 0; const cursor = new Date(today);
-  while ((direction === 1 && cursor < target) || (direction === -1 && cursor > target)) {
+function businessDayDelta(fromValue: string, toValue: string) {
+  const from = parseLocal(fromValue); const to = parseLocal(toValue);
+  const direction = to >= from ? 1 : -1; let count = 0; const cursor = new Date(from);
+  while ((direction === 1 && cursor < to) || (direction === -1 && cursor > to)) {
     cursor.setDate(cursor.getDate() + direction);
     if (cursor.getDay() !== 0 && cursor.getDay() !== 6) count += direction;
   }
   return count;
 }
+function deadlineResult(rnc: Rnc) {
+  const comparison = rnc.sentAt || new Date().toISOString().slice(0, 10);
+  const delta = businessDayDelta(rnc.dueAt, comparison);
+  if (rnc.sentAt) {
+    if (delta === 0) return { delta, label: "Respondida no prazo" };
+    if (delta > 0) return { delta, label: `Respondida com ${delta} ${delta === 1 ? "dia útil" : "dias úteis"} de atraso` };
+    const early = Math.abs(delta);
+    return { delta, label: `Respondida ${early} ${early === 1 ? "dia útil" : "dias úteis"} antes do prazo` };
+  }
+  if (delta > 0) return { delta, label: `${delta} ${delta === 1 ? "dia útil" : "dias úteis"} em atraso` };
+  if (delta === 0) return { delta, label: "Vence hoje" };
+  const remaining = Math.abs(delta);
+  return { delta, label: `${remaining} ${remaining === 1 ? "dia útil" : "dias úteis"} restantes` };
+}
 function urgency(rnc: Rnc) {
   if (rnc.status === "Aprovada") return "approved";
   if (rnc.status === "Reprovada") return "rejected";
-  if (rnc.status === "Respondida") return "answered";
+  if (rnc.sentAt) return deadlineResult(rnc).delta > 0 ? "answered-late" : "answered";
   if (rnc.status === "Não identificado" || rnc.type === "A classificar") return "unclassified";
-  const remaining = businessDaysUntil(rnc.dueAt);
-  if (remaining < 0) return "overdue";
-  if (remaining <= 2) return "warning";
+  const delta = deadlineResult(rnc).delta;
+  if (delta > 0) return "overdue";
+  if (delta >= -2) return "warning";
   return "normal";
 }
 
@@ -66,9 +81,13 @@ export function RncApp() {
   const [showForm, setShowForm] = useState(false);
   const [selected, setSelected] = useState<Rnc | null>(null);
   const [history, setHistory] = useState<Audit[]>([]);
+  const [emails, setEmails] = useState<EmailEvent[]>([]);
+  const [conflicts, setConflicts] = useState<Conflict[]>([]);
   const [editing, setEditing] = useState<Rnc | null>(null);
   const [outlook, setOutlook] = useState<OutlookStatus>({ configured: false, connected: false });
   const [syncing, setSyncing] = useState(false);
+  const [responding, setResponding] = useState<Rnc | null>(null);
+  const [directive, setDirective] = useState("");
 
   async function load() {
     setBusy(true);
@@ -149,8 +168,9 @@ export function RncApp() {
     approved: rows.filter((r) => r.status === "Aprovada").length,
     rejected: rows.filter((r) => r.status === "Reprovada").length,
     reopened: rows.filter((r) => r.status === "Reaberta").length,
-    onTime: rows.filter((r) => urgency(r) !== "overdue" || !!r.sentAt).length,
-    overdue: rows.filter((r) => urgency(r) === "overdue" && !r.sentAt).length,
+    onTime: rows.filter((r) => deadlineResult(r).delta <= 0).length,
+    overdue: rows.filter((r) => !r.sentAt && deadlineResult(r).delta > 0).length,
+    answeredLate: rows.filter((r) => !!r.sentAt && deadlineResult(r).delta > 0).length,
   }), [rows]);
 
   async function createRnc(event: FormEvent<HTMLFormElement>) {
@@ -176,9 +196,41 @@ export function RncApp() {
   }
 
   async function openDetails(rnc: Rnc) {
-    setSelected(rnc); setHistory([]);
+    setSelected(rnc); setHistory([]); setEmails([]); setConflicts([]);
     const response = await fetch(`/api/rncs/${rnc.id}/history`);
-    if (response.ok) setHistory((await response.json()).changes);
+    if (response.ok) {
+      const data = await response.json();
+      setHistory(data.changes); setEmails(data.emails || []); setConflicts(data.conflicts || []);
+    }
+  }
+
+  async function reprocessRnc(rnc: Rnc) {
+    setSyncing(true);
+    try {
+      const response = await fetch(`/api/rncs/${rnc.id}/reprocess`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Falha ao reprocessar.");
+      setNotice(data.message); setSelected(null); await load();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Falha ao reprocessar.");
+    } finally { setSyncing(false); }
+  }
+
+  function responseContext(rnc: Rnc) {
+    return [
+      `RNC ${rnc.number}/${rnc.year}`, `Obra: ${rnc.workName}`, `Descrição: ${rnc.description}`,
+      `Tipo: ${rnc.type}`, `Recebimento: ${fmt(rnc.receivedAt)}`, `Prazo: ${fmt(rnc.dueAt)}`,
+      `Responsável: ${rnc.responseOwner || "Não identificado"}`, `Status: ${rnc.status}`,
+      `Diretriz para elaboração da resposta: ${directive}`,
+      `Histórico oficial:\n${emails.map((event) => `- ${fmt(event.occurredAt)} — ${event.eventType}: ${event.subject || ""}`).join("\n") || "Sem eventos adicionais."}`,
+      "Elabore uma minuta técnica para revisão. Não envie nenhum e-mail.",
+    ].join("\n\n");
+  }
+
+  async function copyResponseContext() {
+    if (!responding || !directive.trim()) { setNotice("Informe a diretriz para elaboração da resposta."); return; }
+    await navigator.clipboard.writeText(responseContext(responding));
+    setNotice("Informações copiadas. Cole-as no agente de RNC.");
   }
 
   function exportExcel() {
@@ -223,6 +275,7 @@ export function RncApp() {
           ["Respondidas", stats.answered, "blue"], ["Aprovadas", stats.approved, "green"],
           ["Reprovadas", stats.rejected, "red"], ["Reabertas", stats.reopened, "violet"],
           ["Dentro do prazo", stats.onTime, "teal"], ["Vencidas", stats.overdue, "red"],
+          ["Respondidas com atraso", stats.answeredLate, "orange"],
         ].map(([label, value, tone]) => <article key={String(label)} className={`metric ${tone}`}><span>{label}</span><strong>{value}</strong><div className="metric-line" /></article>)}
       </section>
 
@@ -244,9 +297,9 @@ export function RncApp() {
               {filtered.map((r, index) => <tr key={r.id} className={`row-${urgency(r)}`} onClick={() => openDetails(r)}>
                 <td className="item">{String(index + 1).padStart(2, "0")}</td><td><strong className="rnc-number">RNC {r.number}</strong><small>{r.workName}</small></td><td>{r.year}</td>
                 <td className="description">{r.description}</td><td><span className="type-tag">{r.type}</span></td><td>{fmt(r.receivedAt)}</td>
-                <td><strong>{fmt(r.dueAt)}</strong>{!r.sentAt && <small>{businessDaysUntil(r.dueAt) < 0 ? `${Math.abs(businessDaysUntil(r.dueAt))} dias úteis em atraso` : `${businessDaysUntil(r.dueAt)} dias úteis`}</small>}</td>
+                <td><strong>{fmt(r.dueAt)}</strong><small>{deadlineResult(r).label}</small></td>
                 <td>{fmt(r.sentAt)}</td><td>{fmt(r.returnedAt)}</td><td><span className={`status status-${r.status.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replaceAll(" ", "-")}`}>{r.status}</span></td>
-                <td>{r.responseOwner || "—"}</td><td><button className="dots" aria-label={`Abrir RNC ${r.number}`}>•••</button></td>
+                <td>{r.responseOwner || "Não identificado"}</td><td className="row-actions"><button className="respond-button" onClick={(event) => { event.stopPropagation(); setResponding(r); setDirective(""); }}>{r.status === "Aprovada" ? "Nova tratativa" : "Responder RNC"}</button><button className="dots" aria-label={`Abrir RNC ${r.number}`}>•••</button></td>
               </tr>)}
             </tbody>
           </table>
@@ -261,15 +314,30 @@ export function RncApp() {
         <div className="drawer-body">
           <span className={`status status-${selected.status.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replaceAll(" ", "-")}`}>{selected.status}</span>
           <h3>{selected.description}</h3>
-          <dl><div><dt>Tipo</dt><dd>{selected.type}</dd></div><div><dt>Recebimento</dt><dd>{fmt(selected.receivedAt)}</dd></div><div><dt>Prazo</dt><dd>{fmt(selected.dueAt)}</dd></div><div><dt>Envio</dt><dd>{fmt(selected.sentAt)}</dd></div><div><dt>Retorno</dt><dd>{fmt(selected.returnedAt)}</dd></div><div><dt>Resp. pela resposta</dt><dd>{selected.responseOwner || "Não informado"}</dd></div><div><dt>Resp. pela análise</dt><dd>{selected.analysisOwner || "Não informado"}</dd></div></dl>
+          <dl><div><dt>Tipo</dt><dd>{selected.type}</dd><small>{sourceFor(selected, "type")}</small></div><div><dt>Recebimento</dt><dd>{fmt(selected.receivedAt)}</dd><small>{sourceFor(selected, "receivedAt")}</small></div><div><dt>Prazo</dt><dd>{fmt(selected.dueAt)}</dd></div><div><dt>Envio</dt><dd>{fmt(selected.sentAt)}</dd><small>{sourceFor(selected, "sentAt")}</small></div><div><dt>Retorno</dt><dd>{fmt(selected.returnedAt)}</dd><small>{sourceFor(selected, "returnedAt")}</small></div><div><dt>Resp. pela resposta</dt><dd>{selected.responseOwner || "Não identificado"}</dd><small>{sourceFor(selected, "responseOwner")}</small></div><div><dt>Resp. pela análise</dt><dd>{selected.analysisOwner || "Não identificado"}</dd></div></dl>
+          {conflicts.some((item) => item.status === "open") && <section className="conflict"><strong>Informações divergentes encontradas</strong><p>Revise os dados candidatos e selecione manualmente o valor correto.</p>{conflicts.filter((item) => item.status === "open").map((item) => <small key={item.id}>{item.field}: {JSON.parse(item.candidateValues).join(" · ")}</small>)}</section>}
           <section className="notes"><h4>Observações internas</h4><p>{selected.notes || "Nenhuma observação registrada."}</p></section>
+          <section className="timeline"><h4>Histórico oficial de e-mails</h4>{emails.length ? emails.map((event) => <div className="timeline-item" key={`email-${event.id}`}><i /><div><strong>{event.eventType.replaceAll("_", " ")}</strong><p>{event.subject}</p><small>{fmt(event.occurredAt)} · {event.folderName || "Outlook"}</small></div></div>) : <p className="muted">Nenhum e-mail oficial vinculado.</p>}</section>
           <section className="timeline"><h4>Histórico de alterações</h4>{history.length ? history.map((h) => <div className="timeline-item" key={h.id}><i /><div><strong>{labelByField[h.field] || h.field}</strong><p>{h.oldValue ? `${h.oldValue} → ` : ""}{h.newValue}</p><small>{fmt(h.changedAt)} · {h.userName}</small></div></div>) : <p className="muted">Nenhuma alteração manual adicional.</p>}</section>
         </div>
-        <div className="drawer-footer"><button className="button primary wide" onClick={() => setEditing(selected)}>Editar RNC</button></div>
+        <div className="drawer-footer split"><button className="button secondary" onClick={() => reprocessRnc(selected)} disabled={syncing}>Reprocessar RNC</button><button className="button primary" onClick={() => setEditing(selected)}>Editar RNC</button></div>
       </aside>}
-      {(selected || editing || showForm) && <div className="backdrop" onClick={() => { setSelected(null); setEditing(null); setShowForm(false); }} />}
+      {responding && <Modal title={`${responding.status === "Aprovada" ? "Nova tratativa" : "Responder RNC"} ${responding.number}/${responding.year}`} onClose={() => setResponding(null)}>
+        <div className="response-panel">
+          <div className="response-summary"><strong>{responding.workName}</strong><span>{responding.description}</span><small>Recebida em {fmt(responding.receivedAt)} · prazo {fmt(responding.dueAt)} · {responding.responseOwner || "Responsável não identificado"}</small></div>
+          <label>Diretriz para elaboração da resposta<textarea value={directive} onChange={(event) => setDirective(event.target.value)} rows={6} required placeholder="Informe o que foi executado, quais documentos ou evidências serão apresentados, eventuais justificativas e o posicionamento que deverá ser adotado na resposta." /></label>
+          <p className="guidance">Inclua fotografias, relatórios, PDFs, planilhas e demais evidências ao trabalhar no agente. O sistema não transfere automaticamente anexos para o ChatGPT.</p>
+          <div className="form-actions"><button className="button secondary" onClick={copyResponseContext}>Copiar informações</button><a className="button primary link-button" href="https://chatgpt.com/g/g-6a0c7aace1708191ade1c78cfc4f70e8-relatorios-tecnicos-assistente" target="_blank" rel="noreferrer">Abrir agente de RNC</a></div>
+        </div>
+      </Modal>}
+      {(selected || editing || showForm || responding) && <div className="backdrop" onClick={() => { setSelected(null); setEditing(null); setShowForm(false); setResponding(null); }} />}
     </main>
   );
+}
+
+function sourceFor(rnc: Rnc, field: string) {
+  try { return (JSON.parse(rnc.fieldSources || "{}") as Record<string, string>)[field] || "Origem não registrada"; }
+  catch { return "Origem não registrada"; }
 }
 
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {

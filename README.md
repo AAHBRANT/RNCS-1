@@ -84,7 +84,7 @@ OUTLOOK_INITIAL_SYNC_DAYS=365
 5. Crie um segredo do cliente e configure as variáveis na Vercel.
 6. Faça um novo deployment e clique em **Conectar Outlook** uma única vez.
 
-O sistema solicita `offline_access` para renovar o acesso no backend. A aplicação não envia e-mails, não altera mensagens e não lê anexos; apenas registra se a mensagem possui anexos.
+O sistema solicita `offline_access` para renovar o acesso no backend. A aplicação não envia nem altera mensagens. Ela lê metadados e o texto de anexos PDF/DOCX relacionados às RNCs para identificar descrição, responsável e resultado da análise.
 
 ## Regras importantes
 
@@ -95,3 +95,29 @@ O sistema solicita `offline_access` para renovar o acesso no backend. A aplicaç
 - mensagens só são associadas automaticamente quando obra, número e ano da RNC podem ser identificados;
 - a sincronização pública possui intervalo mínimo de um minuto;
 - o controle de edição por usuário será implementado depois da validação da integração Outlook.
+
+## Regras oficiais da sincronização
+
+- Recebimento e retorno somente são aceitos quando o remetente é
+  `contato@jampasustentavel.com`.
+- A resposta somente é aceita em **Itens Enviados**, destinada ao endereço oficial.
+- A correlação usa obra + número + ano, assunto, encadeamento e nomes dos anexos.
+- São verificadas a Caixa de Entrada, suas subpastas, a pasta exibida como
+  **JAMPA SUSTENTÁVEL**, suas subpastas e Itens Enviados.
+- Cada execução registra as pastas verificadas.
+- PDF e DOCX são analisados para localizar o responsável e o resultado da análise.
+- Campos corrigidos manualmente ficam protegidos contra sobrescrita automática.
+
+## Fluxo provisório de resposta
+
+O botão **Responder RNC** monta o contexto, exige uma diretriz, permite copiar as informações
+e abre o agente de RNC em outra aba. O link não transfere dados ou anexos automaticamente.
+
+A geração integrada do Word somente deve ser ativada quando existirem:
+
+1. `OPENAI_API_KEY` configurada exclusivamente no backend;
+2. instruções técnicas equivalentes às do agente;
+3. o arquivo real `templates/modelo-resposta-rnc.docx`.
+
+Sem esses itens, a aplicação permanece no modo provisório seguro. Nenhum e-mail é enviado
+automaticamente.
