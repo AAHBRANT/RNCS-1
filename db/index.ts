@@ -17,11 +17,31 @@ export function getDb() {
 let initialization: Promise<void> | undefined;
 
 export function ensureDatabase() {
-  initialization ??= initializeDatabase();
+  initialization ??= initializeDatabase().catch((error) => {
+    initialization = undefined;
+    throw error;
+  });
   return initialization;
 }
 
 async function initializeDatabase() {
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    try {
+      await initializeDatabaseOnce();
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const concurrentDdl =
+        message.includes("pg_type_typname_nsp_index") ||
+        message.includes("duplicate key value violates unique constraint");
+
+      if (!concurrentDdl || attempt === 4) throw error;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 300));
+    }
+  }
+}
+
+async function initializeDatabaseOnce() {
   const sql = neon(connectionString());
   await sql`CREATE TABLE IF NOT EXISTS works (
     id SERIAL PRIMARY KEY,
