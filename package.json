@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
+    "docx-preview": "0.3.7",
     "drizzle-orm": "0.45.2",
     "jszip": "3.10.1",
     "mammoth": "^1.12.0",

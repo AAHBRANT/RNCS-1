@@ -68,12 +68,15 @@ export function ResponseWorkspace() {
   const [versions, setVersions] = useState<Version[]>([]);
   const [documents, setDocuments] = useState<WordDocument[]>([]);
   const [photos, setPhotos] = useState<Array<File | null>>([null, null, null, null]);
+  const [previewDocument, setPreviewDocument] = useState<WordDocument | null>(null);
+  const [previewing, setPreviewing] = useState(false);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [selectedAttachments, setSelectedAttachments] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [accessUser, setAccessUser] = useState<AccessUser | null>(null);
   const documentInput = useRef<HTMLInputElement>(null);
+  const previewContainer = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetch("/api/rncs")
@@ -116,6 +119,44 @@ export function ResponseWorkspace() {
   }, [selectedId]);
 
   const attachments = useMemo(() => attachmentsFromEmails(emails), [emails]);
+
+  useEffect(() => {
+    if (!rnc || !previewDocument || !previewContainer.current) return;
+    let active = true;
+    const container = previewContainer.current;
+    container.replaceChildren();
+    queueMicrotask(() => setPreviewing(true));
+    fetch(`/api/rncs/${rnc.id}/response/document?document=${previewDocument.id}`)
+      .then(async (response) => {
+        if (!response.ok) {
+          const contentType = response.headers.get("content-type") || "";
+          const data = contentType.includes("application/json") ? await response.json() : {};
+          throw new Error(data.error || "Não foi possível abrir o documento.");
+        }
+        return response.arrayBuffer();
+      })
+      .then(async (buffer) => {
+        if (!active) return;
+        const { renderAsync } = await import("docx-preview");
+        if (!active) return;
+        await renderAsync(buffer, container, undefined, {
+          className: "rnc-docx-preview",
+          inWrapper: true,
+          ignoreWidth: false,
+          ignoreHeight: false,
+          ignoreFonts: false,
+          breakPages: true,
+          useBase64URL: true,
+        });
+      })
+      .catch((error) => {
+        if (active) setNotice(error instanceof Error ? error.message : "Não foi possível abrir o documento.");
+      })
+      .finally(() => {
+        if (active) setPreviewing(false);
+      });
+    return () => { active = false; };
+  }, [previewDocument, rnc]);
 
   function update(field: keyof Draft, value: string) {
     setDraft((current) => ({ ...current, [field]: value }));
@@ -367,7 +408,10 @@ export function ResponseWorkspace() {
             <div className="word-versions">
               {documents.length ? documents.map((document, index) => <div key={document.id} className={index === 0 ? "latest" : ""}>
                 <span><strong>{index === 0 ? "Versão atual" : `Versão ${document.version}`}</strong><small>{document.fileName} · {(document.size / 1024).toFixed(0)} KB</small><small>{formatDate(document.createdAt)} · {document.uploadedBy}</small></span>
-                <a className="button secondary link-button" href={`/api/rncs/${rnc.id}/response/document?document=${document.id}`}>Baixar Word</a>
+                <div className="word-actions">
+                  <button className="button secondary" type="button" onClick={() => setPreviewDocument(document)}>Visualizar Word</button>
+                  <a className="button secondary link-button" href={`/api/rncs/${rnc.id}/response/document?document=${document.id}`}>Baixar Word</a>
+                </div>
               </div>) : <p className="muted">Nenhum documento Word anexado. O documento é obrigatório para a aprovação.</p>}
             </div>
           </section>
@@ -383,6 +427,20 @@ export function ResponseWorkspace() {
         </aside>
       </section>}
       {notice && <button className="toast" onClick={() => setNotice("")}>{notice}<span>×</span></button>}
+      {previewDocument && rnc && <div className="document-preview-backdrop" role="presentation" onClick={() => setPreviewDocument(null)}>
+        <section className="document-preview-modal" role="dialog" aria-modal="true" aria-label={`Visualização de ${previewDocument.fileName}`} onClick={(event) => event.stopPropagation()}>
+          <header>
+            <div><strong>{previewDocument.fileName}</strong><small>Versão {previewDocument.version} · visualização para conferência</small></div>
+            <div className="word-actions">
+              <a className="button secondary link-button" href={`/api/rncs/${rnc.id}/response/document?document=${previewDocument.id}`}>Baixar Word</a>
+              <button className="button primary" type="button" onClick={() => setPreviewDocument(null)}>Fechar</button>
+            </div>
+          </header>
+          {previewing && <div className="document-preview-loading">Preparando visualização do Word…</div>}
+          <div ref={previewContainer} className="document-preview-content" />
+          <footer>A visualização pode apresentar pequenas diferenças em relação ao Microsoft Word. O arquivo original não é alterado.</footer>
+        </section>
+      </div>}
     </main>
   );
 }
