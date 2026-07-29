@@ -109,3 +109,33 @@ export const rncConflicts = pgTable("rnc_conflicts", {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: "string" }),
 });
+
+export const rncResponseDrafts = pgTable("rnc_response_drafts", {
+  id: serial("id").primaryKey(),
+  rncId: integer("rnc_id").notNull().references(() => rncs.id),
+  directive: text("directive").notNull().default(""),
+  analysis: text("analysis").notNull().default(""),
+  actionsTaken: text("actions_taken").notNull().default(""),
+  technicalResponse: text("technical_response").notNull().default(""),
+  evidence: text("evidence").notNull().default(""),
+  conclusion: text("conclusion").notNull().default(""),
+  agentResponse: text("agent_response").notNull().default(""),
+  emailBody: text("email_body").notNull().default(""),
+  selectedAttachments: text("selected_attachments").notNull().default("[]"),
+  status: text("status").notNull().default("Rascunho"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("rnc_response_drafts_rnc_unique").on(table.rncId),
+]);
+
+export const rncResponseVersions = pgTable("rnc_response_versions", {
+  id: serial("id").primaryKey(),
+  rncId: integer("rnc_id").notNull().references(() => rncs.id),
+  version: integer("version").notNull(),
+  snapshot: text("snapshot").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("rnc_response_versions_number_unique").on(table.rncId, table.version),
+  index("rnc_response_versions_rnc_idx").on(table.rncId),
+]);

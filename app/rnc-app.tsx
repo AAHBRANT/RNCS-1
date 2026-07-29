@@ -367,6 +367,7 @@ export function RncApp() {
         <div className="brand"><Image className="brand-mark" src="/favicon-rnc.png" alt="RNC" width={39} height={39} priority /><div><strong>Controle de RNC</strong><small>Gestão de não conformidades</small></div></div>
         <div className="header-actions">
           <span className="sync"><i /> {outlook.connected ? "Outlook conectado" : "Operação manual"}</span>
+          <button className="button secondary" onClick={() => { window.location.href = "/responder"; }}>Elaborar respostas</button>
           <button
             className="button secondary"
             onClick={syncEmails}
@@ -421,7 +422,7 @@ export function RncApp() {
                 <td className="description">{r.description}</td><td><span className="type-tag">{r.type}</span></td><td>{fmt(r.receivedAt)}</td>
                 <td><strong>{fmt(r.dueAt)}</strong><small>{deadlineResult(r).label}</small></td>
                 <td>{fmt(r.sentAt)}</td><td>{fmt(r.returnedAt)}</td><td><span className={`status status-${r.status.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replaceAll(" ", "-")}`}>{r.status}</span></td>
-                <td>{r.responseOwner || "Não identificado"}</td><td className="row-actions">{r.status !== "Aprovada" && <button className="respond-button" onClick={(event) => { event.stopPropagation(); setResponding(r); setDirective(""); }}>Responder RNC</button>}<button className="dots" aria-label={`Abrir RNC ${r.number}`}>•••</button></td>
+                <td>{r.responseOwner || "Não identificado"}</td><td className="row-actions">{r.status !== "Aprovada" && <button className="respond-button" onClick={(event) => { event.stopPropagation(); window.location.href = `/responder?rnc=${r.id}`; }}>Responder RNC</button>}<button className="dots" aria-label={`Abrir RNC ${r.number}`}>•••</button></td>
               </tr>)}
             </tbody>
           </table>

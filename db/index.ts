@@ -160,6 +160,32 @@ async function initializeDatabaseOnce() {
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     resolved_at TIMESTAMPTZ
   )`;
+  await sql`CREATE TABLE IF NOT EXISTS rnc_response_drafts (
+    id SERIAL PRIMARY KEY,
+    rnc_id INTEGER NOT NULL REFERENCES rncs(id),
+    directive TEXT NOT NULL DEFAULT '',
+    analysis TEXT NOT NULL DEFAULT '',
+    actions_taken TEXT NOT NULL DEFAULT '',
+    technical_response TEXT NOT NULL DEFAULT '',
+    evidence TEXT NOT NULL DEFAULT '',
+    conclusion TEXT NOT NULL DEFAULT '',
+    agent_response TEXT NOT NULL DEFAULT '',
+    email_body TEXT NOT NULL DEFAULT '',
+    selected_attachments TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'Rascunho',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT rnc_response_drafts_rnc_unique UNIQUE(rnc_id)
+  )`;
+  await sql`CREATE TABLE IF NOT EXISTS rnc_response_versions (
+    id SERIAL PRIMARY KEY,
+    rnc_id INTEGER NOT NULL REFERENCES rncs(id),
+    version INTEGER NOT NULL,
+    snapshot TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT rnc_response_versions_number_unique UNIQUE(rnc_id, version)
+  )`;
+  await sql`CREATE INDEX IF NOT EXISTS rnc_response_versions_rnc_idx ON rnc_response_versions(rnc_id)`;
   await sql`INSERT INTO works (name, active)
     VALUES ('Parque Socioambiental do Roger – Fase II', TRUE)
     ON CONFLICT (name) DO UPDATE SET active = TRUE`;
