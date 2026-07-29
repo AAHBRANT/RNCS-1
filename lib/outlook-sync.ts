@@ -480,7 +480,9 @@ async function fullMailboxDossierScan(accessToken: string, target?: Identity, cu
   const folders = await discoverFolders(accessToken);
   const byId = new Map(folders.map((folder) => [folder.id, folder]));
   const select = "id,internetMessageId,conversationId,parentFolderId,subject,bodyPreview,body,receivedDateTime,sentDateTime,sender,from,toRecipients,ccRecipients,hasAttachments,internetMessageHeaders";
-  const search = encodeURIComponent(`"participants:${OFFICIAL_EMAIL}"`);
+  const search = encodeURIComponent(target
+    ? `"${Number(target.number)}/${target.year}"`
+    : `"participants:${OFFICIAL_EMAIL}"`);
   const page = await graph<GraphPage<GraphMessage>>(
     accessToken,
     cursor || `/me/messages?$search=${search}&$select=${select}&$top=5`,
