@@ -123,6 +123,7 @@ export const rncResponseDrafts = pgTable("rnc_response_drafts", {
   emailBody: text("email_body").notNull().default(""),
   selectedAttachments: text("selected_attachments").notNull().default("[]"),
   status: text("status").notNull().default("Rascunho"),
+  updatedBy: text("updated_by").notNull().default(""),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
@@ -134,8 +135,23 @@ export const rncResponseVersions = pgTable("rnc_response_versions", {
   rncId: integer("rnc_id").notNull().references(() => rncs.id),
   version: integer("version").notNull(),
   snapshot: text("snapshot").notNull(),
+  createdBy: text("created_by").notNull().default(""),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("rnc_response_versions_number_unique").on(table.rncId, table.version),
   index("rnc_response_versions_rnc_idx").on(table.rncId),
+]);
+
+export const accessUsers = pgTable("access_users", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  role: text("role").notNull(),
+  allowedTypes: text("allowed_types").notNull().default("[]"),
+  canViewAll: boolean("can_view_all").notNull().default(false),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("access_users_email_unique").on(table.email),
 ]);

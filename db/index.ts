@@ -173,6 +173,7 @@ async function initializeDatabaseOnce() {
     email_body TEXT NOT NULL DEFAULT '',
     selected_attachments TEXT NOT NULL DEFAULT '[]',
     status TEXT NOT NULL DEFAULT 'Rascunho',
+    updated_by TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT rnc_response_drafts_rnc_unique UNIQUE(rnc_id)
@@ -182,10 +183,50 @@ async function initializeDatabaseOnce() {
     rnc_id INTEGER NOT NULL REFERENCES rncs(id),
     version INTEGER NOT NULL,
     snapshot TEXT NOT NULL,
+    created_by TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT rnc_response_versions_number_unique UNIQUE(rnc_id, version)
   )`;
   await sql`CREATE INDEX IF NOT EXISTS rnc_response_versions_rnc_idx ON rnc_response_versions(rnc_id)`;
+  await sql`ALTER TABLE rnc_response_drafts ADD COLUMN IF NOT EXISTS updated_by TEXT NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE rnc_response_versions ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT ''`;
+  await sql`CREATE TABLE IF NOT EXISTS access_users (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    role TEXT NOT NULL,
+    allowed_types TEXT NOT NULL DEFAULT '[]',
+    can_view_all BOOLEAN NOT NULL DEFAULT FALSE,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`;
+  await sql`INSERT INTO access_users (name, email, role, allowed_types, can_view_all, active)
+    VALUES
+      ('Isabella Marques', 'isabella.marques@aahbrant.com', 'admin', '["*"]', TRUE, TRUE),
+      ('Pedro Ferreira', 'pedro.ferreira@aahbrant.com', 'reviewer_approver', '["*"]', TRUE, TRUE),
+      ('Rafaela Macedo', 'rafaela.macedo@aahbrant.com', 'reviewer_approver', '["*"]', TRUE, TRUE),
+      ('Samuel Brumati', 'samuel.brumati@aahbrant.com', 'reviewer_approver', '["*"]', TRUE, TRUE),
+      ('João Neto', 'joao.neto@aahbrant.com', 'reviewer_approver', '["*"]', TRUE, TRUE),
+      ('José Bruno Gomes', 'jose.gomes@aahbrant.com', 'drafter', '["Segurança do Trabalho"]', FALSE, TRUE),
+      ('Italo Monteiro', 'italo.monteiro@aahbrant.com', 'drafter', '["*"]', TRUE, TRUE)
+    ON CONFLICT (email) DO UPDATE SET
+      name = EXCLUDED.name,
+      role = EXCLUDED.role,
+      allowed_types = EXCLUDED.allowed_types,
+      can_view_all = EXCLUDED.can_view_all,
+      active = TRUE,
+      updated_at = CURRENT_TIMESTAMP`;
+  await sql`UPDATE rncs SET
+      type = 'Execução',
+      field_sources = jsonb_set(field_sources::jsonb, '{type}', '"Corrigido manualmente — falha construtiva"'::jsonb)::text,
+      field_confidence = jsonb_set(field_confidence::jsonb, '{type}', '{"score":5,"reason":"Classificação confirmada como Execução para falha construtiva."}'::jsonb)::text,
+      manual_fields = CASE
+        WHEN manual_fields::jsonb ? 'type' THEN manual_fields
+        ELSE (manual_fields::jsonb || '["type"]'::jsonb)::text
+      END,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE number IN ('268', '269') AND year = 2026`;
   await sql`INSERT INTO works (name, active)
     VALUES ('Parque Socioambiental do Roger – Fase II', TRUE)
     ON CONFLICT (name) DO UPDATE SET active = TRUE`;

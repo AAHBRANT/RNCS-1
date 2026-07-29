@@ -118,9 +118,10 @@ export function explicitSentIdentities(subject: string, body: string, attachment
   return [...new Map(identities.map((identity) => [`${identity.number}/${identity.year}`, identity])).values()];
 }
 
-function classifyType(text: string) {
+export function classifyType(text: string) {
   const source = normalize(text);
   if (/dds|trabalho em altura|andaime|banheiro quimico|seguranca|acidente|epi|risco/.test(source)) return "Segurança do Trabalho";
+  if (/arquibancada|infiltracao|revestimento|gesso|alvenaria|impermeabiliz|falha construtiva/.test(source)) return "Execução";
   if (/ambient|residuo|poluic|licenca|betoneira|lata de tinta/.test(source)) return "Ambiental";
   if (/oxidacao|fissura|adensamento|concretagem|qualidade|inspecao|ensaio/.test(source)) return "Qualidade";
   if (/projeto|desenho|detalh/.test(source)) return "Projeto";

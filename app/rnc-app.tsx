@@ -26,6 +26,7 @@ type OutlookStatus = {
   connected: boolean;
   connection?: { lastSyncAt?: string | null; lastSyncMessage?: string | null };
 };
+type AccessUser = { name: string; email: string; role: "admin" | "drafter" | "reviewer_approver" };
 
 const statusOptions = ["Recebida", "Em elaboração", "Respondida", "Aprovada", "Reprovada", "Reaberta", "Retorno recebido — status a confirmar", "Não identificado"];
 const typeOptions = ["Segurança do Trabalho", "Ambiental", "Qualidade", "Projeto", "Execução", "Documental", "Outro", "A classificar"];
@@ -129,6 +130,7 @@ export function RncApp() {
   const [responding, setResponding] = useState<Rnc | null>(null);
   const [directive, setDirective] = useState("");
   const [updatedLabel, setUpdatedLabel] = useState("Carregando…");
+  const [accessUser, setAccessUser] = useState<AccessUser | null>(null);
 
   async function load() {
     setBusy(true);
@@ -138,6 +140,7 @@ export function RncApp() {
     else {
       setWorks(data.works);
       setRows(data.rncs);
+      setAccessUser(data.user || null);
       setUpdatedLabel(new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date()));
     }
     setBusy(false);
@@ -152,6 +155,7 @@ export function RncApp() {
         else {
           setWorks(data.works);
           setRows(data.rncs);
+          setAccessUser(data.user || null);
           setUpdatedLabel(new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date()));
         }
       })
@@ -366,6 +370,7 @@ export function RncApp() {
       <header className="topbar">
         <div className="brand"><Image className="brand-mark" src="/favicon-rnc.png" alt="RNC" width={39} height={39} priority /><div><strong>Controle de RNC</strong><small>Gestão de não conformidades</small></div></div>
         <div className="header-actions">
+          {accessUser && <span className="user-chip"><strong>{accessUser.name}</strong><small>{accessUser.role === "admin" ? "Administradora" : accessUser.role === "drafter" ? "Elaborador" : "Revisor/Aprovador"}</small></span>}
           <span className="sync"><i /> {outlook.connected ? "Outlook conectado" : "Operação manual"}</span>
           <button className="button secondary" onClick={() => { window.location.href = "/responder"; }}>Elaborar respostas</button>
           <button
@@ -376,7 +381,8 @@ export function RncApp() {
           >
             {syncing ? "Atualizando…" : outlook.connected ? "↻ Atualizar e-mails" : "Conectar Outlook"}
           </button>
-          <button className="button primary" onClick={() => setShowForm(true)}>＋ Nova RNC</button>
+          {accessUser?.role === "admin" && <button className="button primary" onClick={() => setShowForm(true)}>＋ Nova RNC</button>}
+          <a className="logout-link" href="/api/auth/logout">Sair</a>
         </div>
       </header>
 
@@ -452,7 +458,7 @@ export function RncApp() {
           </div></div>) : <p className="muted">Nenhum e-mail oficial vinculado.</p>}</section>
           <section className="timeline"><h4>Histórico de alterações</h4>{history.length ? history.map((h) => <div className="timeline-item" key={h.id}><i /><div><strong>{labelByField[h.field] || h.field}</strong><p>{h.oldValue ? `${h.oldValue} → ` : ""}{h.newValue}</p><small>{fmt(h.changedAt)} · {h.userName}</small></div></div>) : <p className="muted">Nenhuma alteração manual adicional.</p>}</section>
         </div>
-        <div className="drawer-footer split"><button className="button secondary" onClick={() => reprocessRnc(selected)} disabled={syncing}>Reprocessar RNC</button><button className="button primary" onClick={() => setEditing(selected)}>Editar RNC</button></div>
+        {accessUser?.role === "admin" && <div className="drawer-footer split"><button className="button secondary" onClick={() => reprocessRnc(selected)} disabled={syncing}>Reprocessar RNC</button><button className="button primary" onClick={() => setEditing(selected)}>Editar RNC</button></div>}
       </aside>}
       {responding && responding.status !== "Aprovada" && <Modal title={`Responder RNC ${responding.number}/${responding.year}`} onClose={() => setResponding(null)}>
         <div className="response-panel">

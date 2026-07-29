@@ -1,6 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { ensureDatabase, getDb } from "../../../db";
 import { auditLog, rncs, works } from "../../../db/schema";
+import { accessControlEnabled, canAccessType, canEditRnc, forbidden, sessionFromRequest, unauthorized } from "../../../lib/access-control";
 
 const ONLY_WORK = "Parque Socioambiental do Roger – Fase II";
 
@@ -25,8 +26,10 @@ async function ensureWorks() {
   await db.insert(works).values({ name: ONLY_WORK }).onConflictDoNothing();
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const session = sessionFromRequest(request);
+    if (!session) return unauthorized();
     await ensureWorks();
     const db = getDb();
     const [workRows, rncRows] = await Promise.all([
@@ -54,7 +57,11 @@ export async function GET() {
         updatedAt: rncs.updatedAt,
       }).from(rncs).innerJoin(works, eq(rncs.workId, works.id)).orderBy(desc(rncs.year), desc(rncs.id)),
     ]);
-    return Response.json({ works: workRows, rncs: rncRows });
+    return Response.json({
+      works: workRows,
+      rncs: rncRows.filter((rnc) => canAccessType(session, rnc.type)),
+      user: accessControlEnabled() ? session : null,
+    });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Erro ao carregar dados." }, { status: 500 });
   }
@@ -62,6 +69,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const session = sessionFromRequest(request);
+    if (!session) return unauthorized();
+    if (!canEditRnc(session)) return forbidden("Somente a administradora pode cadastrar RNCs manualmente.");
     const body = await request.json() as Record<string, unknown>;
     const receivedAt = body.receivedAt ? String(body.receivedAt) : null;
     const number = String(body.number ?? "").trim().padStart(3, "0");
@@ -111,6 +121,7 @@ export async function POST(request: Request) {
       rncId: created.id,
       field: "registro",
       newValue: outlookAudit ? "RNC importada da comunicação oficial no Outlook" : "RNC criada manualmente",
+      userName: session.name,
     });
     return Response.json({ rnc: created }, { status: 201 });
   } catch (error) {
@@ -122,6 +133,9 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const session = sessionFromRequest(request);
+    if (!session) return unauthorized();
+    if (!canEditRnc(session)) return forbidden("Somente a administradora pode editar os dados cadastrais da RNC.");
     const body = await request.json() as Record<string, unknown>;
     const id = Number(body.id);
     if (!id) return Response.json({ error: "RNC inválida." }, { status: 400 });
@@ -158,7 +172,7 @@ export async function PATCH(request: Request) {
         if (!outlookAudit) {
           fieldConfidence[field] = { score: 5, reason: "Valor confirmado manualmente pelo usuário." };
         }
-        auditRows.push({ rncId: id, field, oldValue: String(previous ?? ""), newValue: String(next ?? "") });
+        auditRows.push({ rncId: id, field, oldValue: String(previous ?? ""), newValue: String(next ?? ""), userName: session.name });
       }
     }
     if ("receivedAt" in changes && changes.receivedAt) changes.dueAt = addBusinessDays(String(changes.receivedAt));

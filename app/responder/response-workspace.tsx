@@ -23,8 +23,10 @@ type Draft = {
   directive: string; analysis: string; actionsTaken: string; technicalResponse: string;
   evidence: string; conclusion: string; agentResponse: string; emailBody: string;
   selectedAttachments: string; status: string; updatedAt?: string;
+  updatedBy?: string;
 };
-type Version = { id: number; version: number; snapshot: string; createdAt: string };
+type Version = { id: number; version: number; snapshot: string; createdAt: string; createdBy?: string };
+type AccessUser = { name: string; email: string; role: "admin" | "drafter" | "reviewer_approver" };
 
 const emptyDraft: Draft = {
   directive: "", analysis: "", actionsTaken: "", technicalResponse: "",
@@ -61,6 +63,7 @@ export function ResponseWorkspace() {
   const [selectedAttachments, setSelectedAttachments] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [accessUser, setAccessUser] = useState<AccessUser | null>(null);
 
   useEffect(() => {
     fetch("/api/rncs")
@@ -79,7 +82,7 @@ export function ResponseWorkspace() {
 
   useEffect(() => {
     if (!selectedId) return;
-    setBusy(true);
+    queueMicrotask(() => setBusy(true));
     window.history.replaceState({}, "", `/responder?rnc=${selectedId}`);
     fetch(`/api/rncs/${selectedId}/response`)
       .then(async (response) => ({ response, data: await response.json() }))
@@ -88,6 +91,7 @@ export function ResponseWorkspace() {
         setRnc(data.rnc);
         setEmails(data.emails || []);
         setVersions(data.versions || []);
+        setAccessUser(data.user || null);
         const loaded = data.draft || emptyDraft;
         setDraft({ ...emptyDraft, ...loaded });
         try { setSelectedAttachments(JSON.parse(loaded.selectedAttachments || "[]")); }
@@ -178,7 +182,7 @@ export function ResponseWorkspace() {
           <Image className="brand-mark" src="/favicon-rnc.png" alt="RNC" width={39} height={39} priority />
           <div><strong>Controle de RNC</strong><small>Área de elaboração de respostas</small></div>
         </Link>
-        <div className="header-actions"><Link className="button secondary link-button" href="/">← Voltar ao painel</Link></div>
+        <div className="header-actions">{accessUser && <span className="user-chip"><strong>{accessUser.name}</strong><small>{accessUser.role === "drafter" ? "Elaborador" : accessUser.role === "admin" ? "Administradora" : "Revisor/Aprovador"}</small></span>}<Link className="button secondary link-button" href="/">← Voltar ao painel</Link><a className="logout-link" href="/api/auth/logout">Sair</a></div>
       </header>
 
       <section className="response-page-heading">
@@ -220,10 +224,10 @@ export function ResponseWorkspace() {
           <div className="editor-toolbar">
             <label>Situação do documento
               <select value={draft.status} onChange={(event) => update("status", event.target.value)}>
-                <option>Rascunho</option><option>Em revisão</option><option>Documento aprovado</option>
+                <option>Rascunho</option><option>Em revisão</option>{accessUser?.role !== "drafter" && <option>Documento aprovado</option>}
               </select>
             </label>
-            <span>{draft.updatedAt ? `Último salvamento: ${formatDate(draft.updatedAt)}` : "Ainda não salvo"}</span>
+            <span>{draft.updatedAt ? `Último salvamento: ${formatDate(draft.updatedAt)}${draft.updatedBy ? ` · ${draft.updatedBy}` : ""}` : "Ainda não salvo"}</span>
           </div>
           <EditorField title="Diretriz para elaboração da resposta" value={draft.directive} onChange={(value) => update("directive", value)} required placeholder="Informe o que foi executado, documentos e evidências, justificativas e o posicionamento a adotar." />
           <div className="editor-grid">
@@ -248,7 +252,7 @@ export function ResponseWorkspace() {
         <aside className="version-panel">
           <h3>Histórico de versões</h3>
           {versions.length ? versions.map((version) => <button key={version.id} onClick={() => restoreVersion(version)}>
-            <strong>Versão {version.version}</strong><small>{new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(version.createdAt))}</small>
+            <strong>Versão {version.version}</strong><small>{new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(version.createdAt))}</small>{version.createdBy && <small>{version.createdBy}</small>}
           </button>) : <p className="muted">Nenhuma versão salva.</p>}
         </aside>
       </section>}
