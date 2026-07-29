@@ -46,6 +46,14 @@ test("identifica os responsáveis pelos campos exatos dos documentos", () => {
     "Juliane Ataíde",
   );
   assert.equal(
+    extractRncInformation("Revisor da Elaboração do RNC: Carlos Almeida").analysisReviewer,
+    "Carlos Almeida",
+  );
+  assert.equal(
+    extractRncInformation("Revisor da Elaboração do RNC\nCarlos Almeida").analysisReviewer,
+    "Carlos Almeida",
+  );
+  assert.equal(
     extractRncInformation("Responsável pela tratativa: Nome incorreto").responsible,
     null,
   );

@@ -412,7 +412,7 @@ export function RncApp() {
         <div className="table-meta"><strong>{filtered.length} registros</strong><span>Atualização local: {updatedLabel}</span></div>
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Item</th><th>Nº RNC</th><th>Ano</th><th>Descrição</th><th>Tipo</th><th>Recebimento</th><th>Prazo de envio</th><th>Envio</th><th>Retorno</th><th>Status</th><th>Responsável</th><th /></tr></thead>
+            <thead><tr><th>Item</th><th>Nº RNC</th><th>Ano</th><th>Descrição</th><th>Tipo</th><th>Recebimento</th><th>Prazo de envio</th><th>Envio</th><th>Retorno</th><th>Status</th><th>Resp. pela resposta</th><th /></tr></thead>
             <tbody>
               {busy && <tr><td colSpan={12} className="empty">Carregando registros…</td></tr>}
               {!busy && !filtered.length && <tr><td colSpan={12} className="empty"><strong>Nenhuma RNC encontrada</strong><span>Cadastre a primeira RNC ou ajuste os filtros.</span></td></tr>}

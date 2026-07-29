@@ -278,7 +278,7 @@ function extractOwners(text: string) {
 function extractAnalysisReviewers(text: string) {
   const values = new Set<string>();
   for (const match of text.matchAll(
-    /revisor\s+da\s+elabora[cç][aã]o\s+da\s+an[aá]lise\s+da\s+tratativa\s*[:\-]?\s*([^\n\r;|]{3,100})/gi,
+    /revisor\s+da\s+elabora[cç][aã]o\s+(?:do\s+rnc|da\s+an[aá]lise\s+da\s+tratativa)\s*[:\-]?\s*([^\n\r;|]{3,100})/gi,
   )) {
     const value = match[1].replace(/\s{2,}/g, " ").trim().replace(/[.,:;-]+$/, "");
     if (
@@ -482,23 +482,27 @@ async function processMessage(
         description: description || "Descrição não identificada",
         type: classifyType(`${description}\n${combined}`), receivedAt: occurredDate,
         dueAt: addBusinessDays(occurredDate), status: "Recebida", responseOwner: owner,
+        analysisOwner: analysisReviewers.length === 1 ? analysisReviewers[0] : "",
         fieldSources: JSON.stringify({
           workId: "Identificado no e-mail recebido", number: "Identificado no e-mail recebido",
           year: "Identificado no e-mail recebido", description: description ? "Identificado no documento" : "Não identificado",
           type: "Identificado no documento", receivedAt: "Identificado no e-mail recebido",
           responseOwner: owners.length === 1 ? "Extraído do documento" : "Não identificado",
+          analysisOwner: analysisReviewers.length === 1 ? "Extraído do documento da RNC" : "Não identificado",
         }),
         fieldConfidence: JSON.stringify({
           receivedAt: { score: 5, reason: "Data da mensagem oficial recebida da Supervisão." },
           description: { score: description ? 5 : 1, reason: description ? "Descrição extraída do nome do documento original." : "Descrição não localizada." },
           type: { score: description ? 4 : 1, reason: "Classificação baseada no documento original." },
           responseOwner: { score: owners.length === 1 ? 5 : 1, reason: owners.length === 1 ? "Nome extraído do documento original da RNC." : "Responsável não localizado no documento." },
+          analysisOwner: { score: analysisReviewers.length === 1 ? 5 : 1, reason: analysisReviewers.length === 1 ? "Revisor extraído do campo 'Revisor da Elaboração do RNC'." : "Revisor não localizado no documento." },
         }),
         sourceSummary: `Mensagem oficial recebida em ${occurredAt}`,
       }).returning();
       stats.newRncs++;
       if (owners.length === 1) stats.ownersIdentified++;
       await recordConflict(rnc.id, "responseOwner", owners);
+      await recordConflict(rnc.id, "analysisOwner", analysisReviewers);
     } else {
       const [alreadyImported] = await db.select({ id: emailEvents.id }).from(emailEvents)
         .where(and(eq(emailEvents.rncId, rnc.id), eq(emailEvents.outlookMessageId, message.id))).limit(1);
@@ -529,6 +533,21 @@ async function processMessage(
         } else if (owners.length > 1) {
           await recordConflict(rnc.id, "responseOwner", owners);
           if (canAutoUpdate(rnc, "responseOwner")) changes.responseOwner = "Não identificado";
+        }
+        if (analysisReviewers.length === 1 && canAutoUpdate(rnc, "analysisOwner")) {
+          changes.analysisOwner = analysisReviewers[0];
+          sources.analysisOwner = "Extraído do documento da RNC";
+          const reviewerInformation = pdfInformation.matching.find(
+            (item) => item.analysisReviewer === analysisReviewers[0],
+          );
+          confidence.analysisOwner = {
+            score: reviewerInformation
+              ? confidenceScore(reviewerInformation.confidence.analysisReviewer)
+              : 4,
+            reason: "Revisor extraído do campo 'Revisor da Elaboração do RNC'.",
+          };
+        } else if (analysisReviewers.length > 1) {
+          await recordConflict(rnc.id, "analysisOwner", analysisReviewers);
         }
       } else if (eventType === "envio_resposta") {
         if (canAutoUpdate(rnc, "sentAt") && (!rnc.sentAt || occurredDate < rnc.sentAt)) {

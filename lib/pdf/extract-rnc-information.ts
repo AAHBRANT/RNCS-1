@@ -66,13 +66,14 @@ function extractAnalysisReviewer(text: string): {
   confidence: ExtractionConfidence;
 } {
   const lines = normalizePdfText(text).split("\n").map((line) => line.trim()).filter(Boolean);
-  const inline = /REVISOR\s+DA\s+ELABORA[ÇC][ÃA]O\s+DA\s+AN[ÁA]LISE\s+DA\s+TRATATIVA\s*:?\s*(.+)$/i;
+  const reviewerLabel = String.raw`REVISOR\s+DA\s+ELABORA[ÇC][ÃA]O\s+(?:DO\s+RNC|DA\s+AN[ÁA]LISE\s+DA\s+TRATATIVA)`;
+  const inline = new RegExp(`${reviewerLabel}\\s*:?\\s*(.+)$`, "i");
   for (const line of lines) {
     const match = line.match(inline);
     const value = match?.[1] ? cleanResponsibleName(match[1]) : null;
     if (value) return { value, confidence: "HIGH" };
   }
-  const label = /^REVISOR\s+DA\s+ELABORA[ÇC][ÃA]O\s+DA\s+AN[ÁA]LISE\s+DA\s+TRATATIVA\s*:?\s*$/i;
+  const label = new RegExp(`^${reviewerLabel}\\s*:?\\s*$`, "i");
   for (let index = 0; index < lines.length - 1; index += 1) {
     if (!label.test(lines[index])) continue;
     const value = cleanResponsibleName(lines[index + 1]);
