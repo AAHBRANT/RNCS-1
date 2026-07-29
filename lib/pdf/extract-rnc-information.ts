@@ -37,6 +37,23 @@ function cleanResponsibleName(value: string) {
   return cleaned;
 }
 
+function looksLikePersonName(value: string | null): value is string {
+  if (!value || /\d/.test(value)) return false;
+  const words = value.split(/\s+/).filter(Boolean);
+  return words.length >= 2 && words.every((word) => /^[A-ZÀ-ÖØ-öø-ÿ.'-]+$/i.test(word));
+}
+
+function nextPersonName(lines: string[], start: number, stopLabels: RegExp[] = []) {
+  for (let index = start; index < Math.min(lines.length, start + 8); index += 1) {
+    const line = lines[index];
+    if (stopLabels.some((label) => label.test(line))) break;
+    if (/^(?:ASSINATURA|DATA|CARGO|FUNÇÃO|FUNCAO|CREA|MATRÍCULA|MATRICULA)\s*:?\s*$/i.test(line)) continue;
+    const value = cleanResponsibleName(line);
+    if (looksLikePersonName(value)) return value;
+  }
+  return null;
+}
+
 function extractInspectionPeople(text: string) {
   const lines = normalizePdfText(text).split("\n").map((line) => line.trim()).filter(Boolean);
   const areaSource = String.raw`RESPONS[ÁA]VEL\s+DA\s+[ÁA]REA\s+INSPECIONADA`;
@@ -52,19 +69,21 @@ function extractInspectionPeople(text: string) {
 
   for (const line of lines) {
     const areaMatch = line.match(areaInline);
-    const areaValue = areaMatch?.[1] ? cleanResponsibleName(areaMatch[1]) : null;
+    const areaCandidate = areaMatch?.[1] ? cleanResponsibleName(areaMatch[1]) : null;
+    const areaValue = looksLikePersonName(areaCandidate) ? areaCandidate : null;
     if (areaValue) { responsible = areaValue; responsibleConfidence = "HIGH"; }
     const fiscalMatch = line.match(fiscalInline);
-    const fiscalValue = fiscalMatch?.[1] ? cleanResponsibleName(fiscalMatch[1]) : null;
+    const fiscalCandidate = fiscalMatch?.[1] ? cleanResponsibleName(fiscalMatch[1]) : null;
+    const fiscalValue = looksLikePersonName(fiscalCandidate) ? fiscalCandidate : null;
     if (fiscalValue) { inspectionResponsible = fiscalValue; inspectionConfidence = "HIGH"; }
   }
 
   const areaIndex = lines.findIndex((line) => areaLabel.test(line));
   const fiscalIndex = lines.findIndex((line) => fiscalLabel.test(line));
   if (areaIndex >= 0 && fiscalIndex === areaIndex + 1) {
-    const candidates = lines.slice(fiscalIndex + 1)
+    const candidates = lines.slice(fiscalIndex + 1, fiscalIndex + 9)
       .map(cleanResponsibleName)
-      .filter((value): value is string => Boolean(value));
+      .filter(looksLikePersonName);
     if (!responsible && candidates[0]) { responsible = candidates[0]; responsibleConfidence = "MEDIUM"; }
     if (!inspectionResponsible && candidates[1]) {
       inspectionResponsible = candidates[1];
@@ -72,11 +91,11 @@ function extractInspectionPeople(text: string) {
     }
   } else {
     if (!responsible && areaIndex >= 0) {
-      const value = cleanResponsibleName(lines[areaIndex + 1] || "");
+      const value = nextPersonName(lines, areaIndex + 1, [fiscalLabel]);
       if (value) { responsible = value; responsibleConfidence = "MEDIUM"; }
     }
     if (!inspectionResponsible && fiscalIndex >= 0) {
-      const value = cleanResponsibleName(lines[fiscalIndex + 1] || "");
+      const value = nextPersonName(lines, fiscalIndex + 1, [areaLabel]);
       if (value) { inspectionResponsible = value; inspectionConfidence = "MEDIUM"; }
     }
   }
@@ -88,18 +107,11 @@ function extractInspectionPeople(text: string) {
 
 function extractContract(text: string): { value: string | null; confidence: ExtractionConfidence } {
   const lines = normalizePdfText(text).split("\n").map((line) => line.trim()).filter(Boolean);
-  for (const line of lines) {
-    const match = line.match(/\bCONTRATO\s*:?\s*(.+)$/i);
-    const value = match?.[1]?.trim().replace(/[|;]+.*$/, "").replace(/[.,:;-]+$/, "");
-    if (value && value.length <= 150 && !/^RESPONS[ÁA]VEL/i.test(value)) {
-      return { value, confidence: "HIGH" };
-    }
-  }
   const index = lines.findIndex((line) => /^CONTRATO\s*:?\s*$/i.test(line));
   if (index >= 0) {
-    const value = lines[index + 1]?.trim();
-    if (value && value.length <= 150 && !/^RESPONS[ÁA]VEL/i.test(value)) {
-      return { value, confidence: "MEDIUM" };
+    const value = lines[index + 1]?.trim().replace(/[|;]+.*$/, "").replace(/[.,:;-]+$/, "");
+    if (value && value.length <= 100 && /\d/.test(value) && !/^RESPONS[ÁA]VEL/i.test(value)) {
+      return { value, confidence: "HIGH" };
     }
   }
   return { value: null, confidence: "LOW" };
@@ -110,7 +122,7 @@ function extractAnalysisReviewer(text: string): {
   confidence: ExtractionConfidence;
 } {
   const lines = normalizePdfText(text).split("\n").map((line) => line.trim()).filter(Boolean);
-  const reviewerLabel = String.raw`REVISOR\s+DA\s+ELABORA[ÇC][ÃA]O\s+(?:DO\s+RNC|DA\s+AN[ÁA]LISE\s+DA\s+TRATATIVA)`;
+  const reviewerLabel = String.raw`REVISOR\s+DA\s+ELABORA[ÇC][ÃA]O\s+DO\s+RNC`;
   const inline = new RegExp(`${reviewerLabel}\\s*:?\\s*(.+)$`, "i");
   for (const line of lines) {
     const match = line.match(inline);
@@ -120,7 +132,7 @@ function extractAnalysisReviewer(text: string): {
   const label = new RegExp(`^${reviewerLabel}\\s*:?\\s*$`, "i");
   for (let index = 0; index < lines.length - 1; index += 1) {
     if (!label.test(lines[index])) continue;
-    const value = cleanResponsibleName(lines[index + 1]);
+    const value = nextPersonName(lines, index + 1);
     if (value) return { value, confidence: "MEDIUM" };
   }
   return { value: null, confidence: "LOW" };

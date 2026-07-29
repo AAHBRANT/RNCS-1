@@ -232,11 +232,6 @@ async function initializeDatabaseOnce() {
     window_start TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMPTZ NOT NULL
   )`;
-  await sql`UPDATE rncs SET
-    response_owner = 'ISABELLA MARQUES',
-    inspection_owner = 'MARIANA LÍVIA DE MELO',
-    updated_at = CURRENT_TIMESTAMP
-    WHERE number = '268' AND year = 2026`;
   await sql`INSERT INTO access_users (name, email, role, allowed_types, can_view_all, active)
     VALUES
       ('Isabella Marques', 'isabella.marques@aahbrant.com', 'admin', '["*"]', TRUE, TRUE),

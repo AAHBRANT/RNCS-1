@@ -8,7 +8,7 @@ const ONLY_WORK = "Parque Socioambiental do Roger – Fase II";
 
 const editableFields = [
   "workId", "number", "year", "description", "type", "receivedAt", "dueAt",
-  "sentAt", "returnedAt", "status", "notes", "responseOwner", "inspectionOwner", "contract", "analysisOwner",
+  "sentAt", "returnedAt", "status", "notes",
 ] as const;
 
 function addBusinessDays(dateValue: string, days = 5) {
@@ -123,10 +123,10 @@ export async function POST(request: Request) {
         receivedAt: "Preenchido manualmente", sentAt: body.sentAt ? "Preenchido manualmente" : undefined,
         returnedAt: body.returnedAt ? "Preenchido manualmente" : undefined,
         status: "Preenchido manualmente", notes: "Preenchido manualmente",
-        responseOwner: "Preenchido manualmente", analysisOwner: "Preenchido manualmente",
+        responseOwner: "Não identificado — preenchimento automático pelo PDF",
       }),
       fieldConfidence: JSON.stringify({}),
-      manualFields: JSON.stringify(outlookAudit ? [] : ["workId", "description", "type", "notes", "responseOwner", "inspectionOwner", "contract", "analysisOwner"]),
+      manualFields: JSON.stringify(outlookAudit ? [] : ["workId", "description", "type", "notes"]),
       sourceSummary: outlookAudit ? "Importado após conferência das comunicações oficiais no Outlook." : "",
     }).returning();
     await db.insert(auditLog).values({

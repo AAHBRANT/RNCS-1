@@ -35,15 +35,9 @@ test("identifica os responsáveis pelos campos exatos dos documentos", () => {
   );
   assert.equal(
     extractRncInformation(
-      "Revisor da Elaboração da Análise da Tratativa: Juliane Ataíde",
-    ).analysisReviewer,
-    "Juliane Ataíde",
-  );
-  assert.equal(
-    extractRncInformation(
       "Revisor da Elaboração da Análise da Tratativa\nJuliane Ataíde",
     ).analysisReviewer,
-    "Juliane Ataíde",
+    null,
   );
   assert.equal(
     extractRncInformation("Revisor da Elaboração do RNC: Carlos Almeida").analysisReviewer,
@@ -65,11 +59,25 @@ test("separa o responsável da área e o fiscal da inspeção", () => {
     "ISABELLA MARQUES",
     "RESPONSÁVEL FISCAL PELA INSPEÇÃO:",
     "MARIANA LÍVIA DE MELO",
-    "CONTRATO: 123/2026",
+    "CONTRATO:",
+    "123/2026",
   ].join("\n"));
   assert.equal(information.responsible, "ISABELLA MARQUES");
   assert.equal(information.inspectionResponsible, "MARIANA LÍVIA DE MELO");
   assert.equal(information.contract, "123/2026");
+});
+
+test("localiza o revisor abaixo da assinatura no FG 14", () => {
+  const information = extractRncInformation([
+    "REVISOR DA ELABORAÇÃO DO RNC",
+    "ASSINATURA",
+    "CARLOS ALMEIDA",
+  ].join("\n"));
+  assert.equal(information.analysisReviewer, "CARLOS ALMEIDA");
+});
+
+test("não aceita o contrato escrito na mesma linha do rótulo", () => {
+  assert.equal(extractRncInformation("CONTRATO: VALOR INCORRETO").contract, null);
 });
 
 test("separa responsáveis quando o PDF extrai os dois rótulos antes dos nomes", () => {

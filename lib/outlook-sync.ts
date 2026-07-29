@@ -317,7 +317,7 @@ function confidenceScore(value: "HIGH" | "MEDIUM" | "LOW") {
 
 function pdfInformationForIdentity(attachments: AttachmentInfo[], identity: Identity) {
   const conflicts: string[] = [];
-  const matching = attachments.flatMap((attachment) => {
+  const matchedAttachments = attachments.flatMap((attachment) => {
     const information = attachment.pdfProcessing?.information;
     if (!information) return [];
     if (information.rncNumber && information.rncNumber !== identity.number) {
@@ -328,9 +328,15 @@ function pdfInformationForIdentity(attachments: AttachmentInfo[], identity: Iden
       conflicts.push(`${attachment.name}: RNC ${information.rncNumber || "?"}/${information.year}`);
       return [];
     }
-    return [information];
+    return [{ name: attachment.name, information }];
   });
-  return { matching, conflicts };
+  return {
+    matching: matchedAttachments.map((attachment) => attachment.information),
+    matchingFg14: matchedAttachments
+      .filter((attachment) => /\bFG\s*[-_. ]?\s*14\b/i.test(attachment.name))
+      .map((attachment) => attachment.information),
+    conflicts,
+  };
 }
 
 function attachmentAuditMetadata(attachments: AttachmentInfo[]) {
@@ -462,22 +468,18 @@ async function processMessage(
 
     const description = descriptionFromAttachment(identity, attachmentNames);
     const pdfInformation = pdfInformationForIdentity(attachments, identity);
-    const pdfOwners = pdfInformation.matching
+    const owners = [...new Set(pdfInformation.matching
       .map((information) => information.responsible)
-      .filter((value): value is string => Boolean(value));
-    const owners = [...new Set(pdfOwners.length ? pdfOwners : extractOwners(documentText))];
+      .filter((value): value is string => Boolean(value)))];
     const inspectionOwners = [...new Set(pdfInformation.matching
       .map((information) => information.inspectionResponsible)
       .filter((value): value is string => Boolean(value)))];
     const contracts = [...new Set(pdfInformation.matching
       .map((information) => information.contract)
       .filter((value): value is string => Boolean(value)))];
-    const pdfAnalysisReviewers = pdfInformation.matching
+    const analysisReviewers = [...new Set(pdfInformation.matchingFg14
       .map((information) => information.analysisReviewer)
-      .filter((value): value is string => Boolean(value));
-    const analysisReviewers = [...new Set(
-      pdfAnalysisReviewers.length ? pdfAnalysisReviewers : extractAnalysisReviewers(documentText),
-    )];
+      .filter((value): value is string => Boolean(value)))];
     if (rnc && pdfInformation.conflicts.length) {
       await recordConflict(rnc.id, "documentIdentity", [
         `RNC esperada ${identity.number}/${identity.year}`,
@@ -537,7 +539,7 @@ async function processMessage(
           changes.description = description; sources.description = "Identificado no documento";
           confidence.description = { score: 5, reason: "Descrição extraída do nome do documento original." };
         }
-        if (owners.length === 1 && canAutoUpdate(rnc, "responseOwner")) {
+        if (owners.length === 1) {
           changes.responseOwner = owners[0]; sources.responseOwner = "Extraído do documento";
           const ownerInformation = pdfInformation.matching.find((item) => item.responsible === owners[0]);
           confidence.responseOwner = {
@@ -549,9 +551,12 @@ async function processMessage(
           stats.ownersIdentified++;
         } else if (owners.length > 1) {
           await recordConflict(rnc.id, "responseOwner", owners);
-          if (canAutoUpdate(rnc, "responseOwner")) changes.responseOwner = "Não identificado";
+          changes.responseOwner = "Não identificado";
+        } else {
+          changes.responseOwner = "Não identificado";
+          sources.responseOwner = "Não identificado no campo 'Responsável da Área Inspecionada'";
         }
-        if (inspectionOwners.length === 1 && canAutoUpdate(rnc, "inspectionOwner")) {
+        if (inspectionOwners.length === 1) {
           changes.inspectionOwner = inspectionOwners[0];
           sources.inspectionOwner = "Extraído do documento";
           const information = pdfInformation.matching.find(
@@ -563,8 +568,10 @@ async function processMessage(
           };
         } else if (inspectionOwners.length > 1) {
           await recordConflict(rnc.id, "inspectionOwner", inspectionOwners);
+        } else {
+          changes.inspectionOwner = "";
         }
-        if (contracts.length === 1 && canAutoUpdate(rnc, "contract")) {
+        if (contracts.length === 1) {
           changes.contract = contracts[0];
           sources.contract = "Extraído do documento";
           const information = pdfInformation.matching.find((item) => item.contract === contracts[0]);
@@ -574,11 +581,13 @@ async function processMessage(
           };
         } else if (contracts.length > 1) {
           await recordConflict(rnc.id, "contract", contracts);
+        } else {
+          changes.contract = "";
         }
-        if (analysisReviewers.length === 1 && canAutoUpdate(rnc, "analysisOwner")) {
+        if (analysisReviewers.length === 1) {
           changes.analysisOwner = analysisReviewers[0];
           sources.analysisOwner = "Extraído do documento da RNC";
-          const reviewerInformation = pdfInformation.matching.find(
+          const reviewerInformation = pdfInformation.matchingFg14.find(
             (item) => item.analysisReviewer === analysisReviewers[0],
           );
           confidence.analysisOwner = {
@@ -589,6 +598,9 @@ async function processMessage(
           };
         } else if (analysisReviewers.length > 1) {
           await recordConflict(rnc.id, "analysisOwner", analysisReviewers);
+          changes.analysisOwner = "";
+        } else {
+          changes.analysisOwner = "";
         }
       } else if (eventType === "envio_resposta") {
         if (canAutoUpdate(rnc, "sentAt") && (!rnc.sentAt || occurredDate < rnc.sentAt)) {
@@ -601,21 +613,6 @@ async function processMessage(
         }
       } else {
         stats.returnsProcessed++;
-        if (analysisReviewers.length === 1 && canAutoUpdate(rnc, "analysisOwner")) {
-          changes.analysisOwner = analysisReviewers[0];
-          sources.analysisOwner = "Extraído do documento de análise";
-          const reviewerInformation = pdfInformation.matching.find(
-            (item) => item.analysisReviewer === analysisReviewers[0],
-          );
-          confidence.analysisOwner = {
-            score: reviewerInformation
-              ? confidenceScore(reviewerInformation.confidence.analysisReviewer)
-              : 4,
-            reason: "Revisor extraído do campo 'Revisor da Elaboração da Análise da Tratativa'.",
-          };
-        } else if (analysisReviewers.length > 1) {
-          await recordConflict(rnc.id, "analysisOwner", analysisReviewers);
-        }
         if (canAutoUpdate(rnc, "returnedAt") && (!rnc.returnedAt || occurredDate >= rnc.returnedAt)) {
           changes.returnedAt = occurredDate; sources.returnedAt = "Identificado no e-mail recebido";
           confidence.returnedAt = { score: 5, reason: "Data do e-mail oficial de retorno da Supervisão." };

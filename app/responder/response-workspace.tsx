@@ -72,7 +72,7 @@ export function ResponseWorkspace() {
   const [photos, setPhotos] = useState<Array<File | null>>([null, null, null, null]);
   const [previewDocument, setPreviewDocument] = useState<WordDocument | null>(null);
   const [previewing, setPreviewing] = useState(false);
-  const [previewZoom, setPreviewZoom] = useState(80);
+  const [previewZoom, setPreviewZoom] = useState(70);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [selectedAttachments, setSelectedAttachments] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -326,12 +326,12 @@ export function ResponseWorkspace() {
           <p>{rnc.description}</p>
           <dl>
             <div><dt>Obra</dt><dd>{rnc.workName}</dd></div>
-            <div><dt>Tipo</dt><dd>{rnc.type}</dd></div>
             <div><dt>Recebimento</dt><dd>{formatDate(rnc.receivedAt)}</dd></div>
             <div><dt>Prazo</dt><dd>{formatDate(rnc.dueAt)}</dd></div>
             <div><dt>Responsável da área inspecionada</dt><dd>{rnc.responseOwner || "Não identificado"}</dd></div>
             <div><dt>Responsável fiscal pela inspeção</dt><dd>{rnc.inspectionOwner || "Não identificado"}</dd></div>
             <div><dt>Contrato</dt><dd>{rnc.contract || "Não identificado"}</dd></div>
+            {rnc.analysisOwner && <div><dt>Resp. pela análise</dt><dd>{rnc.analysisOwner}</dd></div>}
             <div><dt>Envio anterior</dt><dd>{formatDate(rnc.sentAt)}</dd></div>
           </dl>
           <h3>Documentos do dossiê</h3>
@@ -434,7 +434,7 @@ export function ResponseWorkspace() {
             <div className="word-actions">
               <label className="preview-zoom">Zoom
                 <select value={previewZoom} onChange={(event) => setPreviewZoom(Number(event.target.value))}>
-                  <option value={60}>60%</option><option value={70}>70%</option><option value={80}>80%</option>
+                  <option value={50}>50%</option><option value={60}>60%</option><option value={70}>70%</option><option value={80}>80%</option>
                   <option value={90}>90%</option><option value={100}>100%</option><option value={110}>110%</option>
                 </select>
               </label>

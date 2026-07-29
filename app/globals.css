@@ -181,13 +181,13 @@ dd { margin:0; font-size:12px; font-weight:700; }
 .word-actions { display:flex; align-items:center; gap:7px; flex:none; }
 .generate-word { justify-self:start; }
 .document-preview-backdrop { position:fixed; inset:0; z-index:90; display:grid; place-items:center; padding:18px; background:rgba(13,31,23,.68); backdrop-filter:blur(3px); }
-.document-preview-modal { width:min(1120px,100%); height:min(94vh,980px); display:grid; grid-template-rows:auto 1fr auto; overflow:hidden; border-radius:14px; background:#fff; box-shadow:0 24px 70px rgba(0,0,0,.34); }
+.document-preview-modal { width:min(1380px,98vw); height:97vh; display:grid; grid-template-rows:auto 1fr auto; overflow:hidden; border-radius:14px; background:#fff; box-shadow:0 24px 70px rgba(0,0,0,.34); }
 .document-preview-modal > header { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:13px 16px; border-bottom:1px solid var(--line); }
 .document-preview-modal > header strong,.document-preview-modal > header small { display:block; }
 .document-preview-modal > header strong { font-size:13px; }.document-preview-modal > header small { margin-top:3px; color:var(--muted); font-size:9px; }
 .document-preview-content { min-height:0; overflow:auto; background:#d9ddda; }
-.document-preview-content > div { min-width:max-content; transform-origin:top left; }
-.document-preview-content .docx-wrapper { min-height:100%; padding:25px!important; background:#d9ddda!important; }
+.document-preview-content > div { width:100%; min-width:0; transform-origin:top center; }
+.document-preview-content .docx-wrapper { min-height:100%; align-items:center!important; padding:25px!important; overflow:visible!important; background:#d9ddda!important; }
 .document-preview-content .docx-wrapper > section.rnc-docx-preview { margin-bottom:22px; box-shadow:0 4px 16px rgba(0,0,0,.17); }
 .preview-zoom { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:10px; font-weight:700; }
 .preview-zoom select { min-width:76px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:white; color:var(--ink); font:inherit; }
