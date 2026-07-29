@@ -2,6 +2,7 @@ import { and, desc, eq, max } from "drizzle-orm";
 import { ensureDatabase, getDb } from "../../../../../db";
 import {
   emailEvents,
+  rncResponseDocuments,
   rncResponseDrafts,
   rncResponseVersions,
   rncs,
@@ -97,6 +98,19 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         ? "Somente revisores/aprovadores podem aprovar o documento."
         : "Seu perfil não pode realizar esta transição.",
     );
+  }
+  if (status === "Documento aprovado") {
+    const [latestDocument] = await db.select({ id: rncResponseDocuments.id })
+      .from(rncResponseDocuments)
+      .where(eq(rncResponseDocuments.rncId, rncId))
+      .orderBy(desc(rncResponseDocuments.version))
+      .limit(1);
+    if (!latestDocument) {
+      return Response.json(
+        { error: "Anexe o documento Word final antes de aprová-lo." },
+        { status: 409 },
+      );
+    }
   }
   const now = new Date().toISOString();
   const draftValues = {

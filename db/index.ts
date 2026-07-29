@@ -190,6 +190,19 @@ async function initializeDatabaseOnce() {
   await sql`CREATE INDEX IF NOT EXISTS rnc_response_versions_rnc_idx ON rnc_response_versions(rnc_id)`;
   await sql`ALTER TABLE rnc_response_drafts ADD COLUMN IF NOT EXISTS updated_by TEXT NOT NULL DEFAULT ''`;
   await sql`ALTER TABLE rnc_response_versions ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT ''`;
+  await sql`CREATE TABLE IF NOT EXISTS rnc_response_documents (
+    id SERIAL PRIMARY KEY,
+    rnc_id INTEGER NOT NULL REFERENCES rncs(id),
+    version INTEGER NOT NULL,
+    file_name TEXT NOT NULL,
+    content_type TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    content_base64 TEXT NOT NULL,
+    uploaded_by TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT rnc_response_documents_number_unique UNIQUE(rnc_id, version)
+  )`;
+  await sql`CREATE INDEX IF NOT EXISTS rnc_response_documents_rnc_idx ON rnc_response_documents(rnc_id)`;
   await sql`CREATE TABLE IF NOT EXISTS access_users (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,

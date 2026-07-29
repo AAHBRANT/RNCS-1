@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type RncListItem = {
   id: number; number: string; year: number; description: string; status: string;
@@ -26,6 +26,9 @@ type Draft = {
   updatedBy?: string;
 };
 type Version = { id: number; version: number; snapshot: string; createdAt: string; createdBy?: string };
+type WordDocument = {
+  id: number; version: number; fileName: string; size: number; uploadedBy: string; createdAt: string;
+};
 type AccessUser = { name: string; email: string; role: "admin" | "drafter" | "reviewer_approver" };
 
 const emptyDraft: Draft = {
@@ -59,11 +62,13 @@ export function ResponseWorkspace() {
   const [rnc, setRnc] = useState<RncDetail | null>(null);
   const [emails, setEmails] = useState<EmailEvent[]>([]);
   const [versions, setVersions] = useState<Version[]>([]);
+  const [documents, setDocuments] = useState<WordDocument[]>([]);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [selectedAttachments, setSelectedAttachments] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [accessUser, setAccessUser] = useState<AccessUser | null>(null);
+  const documentInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch("/api/rncs")
@@ -84,14 +89,17 @@ export function ResponseWorkspace() {
     if (!selectedId) return;
     queueMicrotask(() => setBusy(true));
     window.history.replaceState({}, "", `/responder?rnc=${selectedId}`);
-    fetch(`/api/rncs/${selectedId}/response`)
-      .then(async (response) => ({ response, data: await response.json() }))
-      .then(({ response, data }) => {
+    Promise.all([
+      fetch(`/api/rncs/${selectedId}/response`).then(async (response) => ({ response, data: await response.json() })),
+      fetch(`/api/rncs/${selectedId}/response/document`).then((response) => response.json()),
+    ])
+      .then(([{ response, data }, documentData]) => {
         if (!response.ok) throw new Error(data.error || "Não foi possível abrir a RNC.");
         setRnc(data.rnc);
         setEmails(data.emails || []);
         setVersions(data.versions || []);
         setAccessUser(data.user || null);
+        setDocuments(documentData.documents || []);
         const loaded = data.draft || emptyDraft;
         setDraft({ ...emptyDraft, ...loaded });
         try { setSelectedAttachments(JSON.parse(loaded.selectedAttachments || "[]")); }
@@ -159,6 +167,29 @@ export function ResponseWorkspace() {
       setDraft((current) => ({ ...current, updatedAt: data.draft.updatedAt }));
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Não foi possível salvar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function uploadDocument(file?: File) {
+    if (!rnc || !file) return;
+    setBusy(true);
+    try {
+      const form = new FormData();
+      form.set("document", file);
+      const response = await fetch(`/api/rncs/${rnc.id}/response/document`, {
+        method: "POST",
+        body: form,
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Não foi possível anexar o documento.");
+      const refreshed = await fetch(`/api/rncs/${rnc.id}/response/document`).then((item) => item.json());
+      setDocuments(refreshed.documents || []);
+      setNotice(`Documento Word salvo como versão ${data.document.version}.`);
+      if (documentInput.current) documentInput.current.value = "";
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Não foi possível anexar o documento.");
     } finally {
       setBusy(false);
     }
@@ -245,6 +276,28 @@ export function ResponseWorkspace() {
           </div>
           <EditorField title="Resposta produzida pelo agente" value={draft.agentResponse} onChange={(value) => update("agentResponse", value)} rows={12} placeholder="Cole aqui a resposta gerada para revisar e manter no histórico." />
           <EditorField title="Resposta técnica final" value={draft.technicalResponse} onChange={(value) => update("technicalResponse", value)} rows={10} />
+          <section className="word-document-panel">
+            <div>
+              <strong>Documento Word final</strong>
+              <p>Anexe o `.docx` produzido e corrigido. Cada substituição cria uma versão preservada para conferência.</p>
+            </div>
+            <div className="word-upload">
+              <input
+                ref={documentInput}
+                type="file"
+                accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                onChange={(event) => uploadDocument(event.target.files?.[0])}
+                disabled={busy}
+              />
+              <small>Formato .docx · máximo 3 MB</small>
+            </div>
+            <div className="word-versions">
+              {documents.length ? documents.map((document, index) => <div key={document.id} className={index === 0 ? "latest" : ""}>
+                <span><strong>{index === 0 ? "Versão atual" : `Versão ${document.version}`}</strong><small>{document.fileName} · {(document.size / 1024).toFixed(0)} KB</small><small>{formatDate(document.createdAt)} · {document.uploadedBy}</small></span>
+                <a className="button secondary link-button" href={`/api/rncs/${rnc.id}/response/document?document=${document.id}`}>Baixar Word</a>
+              </div>) : <p className="muted">Nenhum documento Word anexado. O documento é obrigatório para a aprovação.</p>}
+            </div>
+          </section>
           <EditorField title="Texto sugerido para o e-mail" value={draft.emailBody} onChange={(value) => update("emailBody", value)} rows={5} placeholder={`Prezados,\n\nEncaminhamos a resposta à RNC nº ${rnc.number}/${rnc.year} para análise.`} />
           <div className="save-bar"><span>Cada salvamento cria uma versão auditável.</span><button className="button primary" disabled={busy} onClick={saveDraft}>{busy ? "Salvando…" : "Salvar nova versão"}</button></div>
         </div>

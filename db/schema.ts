@@ -142,6 +142,21 @@ export const rncResponseVersions = pgTable("rnc_response_versions", {
   index("rnc_response_versions_rnc_idx").on(table.rncId),
 ]);
 
+export const rncResponseDocuments = pgTable("rnc_response_documents", {
+  id: serial("id").primaryKey(),
+  rncId: integer("rnc_id").notNull().references(() => rncs.id),
+  version: integer("version").notNull(),
+  fileName: text("file_name").notNull(),
+  contentType: text("content_type").notNull(),
+  size: integer("size").notNull(),
+  contentBase64: text("content_base64").notNull(),
+  uploadedBy: text("uploaded_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("rnc_response_documents_number_unique").on(table.rncId, table.version),
+  index("rnc_response_documents_rnc_idx").on(table.rncId),
+]);
+
 export const accessUsers = pgTable("access_users", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
