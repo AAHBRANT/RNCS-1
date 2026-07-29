@@ -555,6 +555,10 @@ async function processMessage(
         } else {
           changes.responseOwner = "Não identificado";
           sources.responseOwner = "Não identificado no campo 'Responsável da Área Inspecionada'";
+          confidence.responseOwner = {
+            score: 1,
+            reason: "A célula imediatamente abaixo do cabeçalho não foi identificada com segurança.",
+          };
         }
         if (inspectionOwners.length === 1) {
           changes.inspectionOwner = inspectionOwners[0];
@@ -570,6 +574,11 @@ async function processMessage(
           await recordConflict(rnc.id, "inspectionOwner", inspectionOwners);
         } else {
           changes.inspectionOwner = "";
+          sources.inspectionOwner = "Não identificado no quadro do PDF";
+          confidence.inspectionOwner = {
+            score: 1,
+            reason: "A célula imediatamente abaixo do cabeçalho não foi identificada com segurança.",
+          };
         }
         if (contracts.length === 1) {
           changes.contract = contracts[0];
@@ -583,6 +592,11 @@ async function processMessage(
           await recordConflict(rnc.id, "contract", contracts);
         } else {
           changes.contract = "";
+          sources.contract = "Não identificado no quadro do PDF";
+          confidence.contract = {
+            score: 1,
+            reason: "A célula imediatamente abaixo do cabeçalho CONTRATO não foi identificada com segurança.",
+          };
         }
         if (analysisReviewers.length === 1) {
           changes.analysisOwner = analysisReviewers[0];
@@ -601,6 +615,11 @@ async function processMessage(
           changes.analysisOwner = "";
         } else {
           changes.analysisOwner = "";
+          sources.analysisOwner = "Não identificado no FG 14";
+          confidence.analysisOwner = {
+            score: 1,
+            reason: "Revisor da Elaboração do RNC não localizado na célula correspondente do FG 14.",
+          };
         }
       } else if (eventType === "envio_resposta") {
         if (canAutoUpdate(rnc, "sentAt") && (!rnc.sentAt || occurredDate < rnc.sentAt)) {

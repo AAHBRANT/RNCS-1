@@ -29,6 +29,42 @@ function valueImmediatelyBelow(
   return null;
 }
 
+function valueFromLayoutColumn(
+  layoutText: string,
+  title: string,
+  options: { skipSignature?: boolean } = {},
+) {
+  const rows = layoutText
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.split("\t").map((cell) => cell.trim()));
+  if (!rows.some((row) => row.length > 1)) return null;
+  const expected = normalizedCell(title);
+  for (let row = 0; row < rows.length; row += 1) {
+    for (let column = 0; column < rows[row].length; column += 1) {
+      let heading = "";
+      for (let headingRows = 0; headingRows < 3 && row + headingRows < rows.length; headingRows += 1) {
+        const fragment = normalizedCell(rows[row + headingRows]?.[column] || "");
+        if (!fragment) continue;
+        heading = `${heading} ${fragment}`.trim();
+        if (heading === expected) {
+          for (let valueRow = row + headingRows + 1; valueRow < Math.min(rows.length, row + headingRows + 4); valueRow += 1) {
+            const contents = normalizePdfText(rows[valueRow]?.[column] || "")
+              .split("\n").map((line) => line.trim()).filter(Boolean);
+            const value = contents.find((line) =>
+              !options.skipSignature || !/^ASSINATURA\s*:?\s*$/i.test(line),
+            );
+            if (value) return value;
+          }
+          break;
+        }
+        if (!expected.startsWith(heading)) break;
+      }
+    }
+  }
+  return null;
+}
+
 function extractRncNumber(text: string): {
   number: string | null;
   year: number | null;
@@ -204,20 +240,27 @@ function extractAnalysisStatus(text: string): {
   return { status: "STATUS_A_CONFIRMAR", matchedText: null, confidence: "LOW" };
 }
 
-export function extractRncInformation(rawText: string, tables: PdfTable[] = []): ExtractedRncInformation {
+export function extractRncInformation(
+  rawText: string,
+  tables: PdfTable[] = [],
+  layoutText = "",
+): ExtractedRncInformation {
   const rnc = extractRncNumber(rawText);
   const people = extractInspectionPeople(rawText);
   const contract = extractContract(rawText);
   const analysisReviewer = extractAnalysisReviewer(rawText);
   const analysis = extractAnalysisStatus(rawText);
-  const hasStructuredTables = tables.length > 0;
-  const structuredResponsible = valueImmediatelyBelow(tables, "RESPONSÁVEL DA ÁREA INSPECIONADA");
-  const structuredFiscal = valueImmediatelyBelow(tables, "RESPONSÁVEL FISCAL PELA INSPEÇÃO");
-  const structuredContract = valueImmediatelyBelow(tables, "CONTRATO");
+  const hasStructuredTables = tables.length > 0 || layoutText.split(/\r?\n/).some((line) => line.includes("\t"));
+  const structuredResponsible = valueImmediatelyBelow(tables, "RESPONSÁVEL DA ÁREA INSPECIONADA")
+    || valueFromLayoutColumn(layoutText, "RESPONSÁVEL DA ÁREA INSPECIONADA");
+  const structuredFiscal = valueImmediatelyBelow(tables, "RESPONSÁVEL FISCAL PELA INSPEÇÃO")
+    || valueFromLayoutColumn(layoutText, "RESPONSÁVEL FISCAL PELA INSPEÇÃO");
+  const structuredContract = valueImmediatelyBelow(tables, "CONTRATO")
+    || valueFromLayoutColumn(layoutText, "CONTRATO");
   const structuredReviewer = valueImmediatelyBelow(
-    tables,
-    "REVISOR DA ELABORAÇÃO DO RNC",
-    { skipSignature: true },
+    tables, "REVISOR DA ELABORAÇÃO DO RNC", { skipSignature: true },
+  ) || valueFromLayoutColumn(
+    layoutText, "REVISOR DA ELABORAÇÃO DO RNC", { skipSignature: true },
   );
   const responsible = structuredResponsible
     ? cleanResponsibleName(structuredResponsible)

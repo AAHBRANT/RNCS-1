@@ -102,6 +102,18 @@ test("não usa texto próximo quando o quadro não contém o campo solicitado", 
   assert.equal(information.responsible, null);
 });
 
+test("preserva colunas quando os títulos do PDF estão quebrados em duas linhas", () => {
+  const layout = [
+    "RESPONSÁVEL DA ÁREA\tRESPONSÁVEL FISCAL PELA\tCONTRATO",
+    "INSPECIONADA\tINSPEÇÃO\t",
+    "ISABELLA MARQUES\tMARIANA LÍVIA DE MELO\tCT 02.023/2024 – UEP/SEGGOV",
+  ].join("\n");
+  const information = extractRncInformation("Texto linear misturado", [], layout);
+  assert.equal(information.responsible, "ISABELLA MARQUES");
+  assert.equal(information.inspectionResponsible, "MARIANA LÍVIA DE MELO");
+  assert.equal(information.contract, "CT 02.023/2024 – UEP/SEGGOV");
+});
+
 test("separa responsáveis quando o PDF extrai os dois rótulos antes dos nomes", () => {
   const information = extractRncInformation([
     "RESPONSÁVEL DA ÁREA INSPECIONADA:",

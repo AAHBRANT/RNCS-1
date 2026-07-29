@@ -27,7 +27,7 @@ export async function processRncAttachment(params: {
     return {
       success: true, needsOcr: false, fileName: params.fileName,
       pageCount: extraction.pageCount,
-      information: extractRncInformation(extraction.text, extraction.tables), error: null,
+      information: extractRncInformation(extraction.text, extraction.tables, extraction.layoutText), error: null,
     };
   } catch (error) {
     return {

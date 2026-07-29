@@ -2,6 +2,7 @@ import { normalizePdfText } from "./normalize-pdf-text";
 
 export interface PdfTextExtractionResult {
   text: string;
+  layoutText: string;
   tables: string[][][];
   pageCount: number;
   hasUsefulText: boolean;
@@ -23,6 +24,7 @@ export async function extractPdfText(pdfBuffer: Buffer): Promise<PdfTextExtracti
     const text = normalizePdfText(result.text || "");
     return {
       text,
+      layoutText: result.text || "",
       tables: tableResult.pages.flatMap((page) => page.tables),
       pageCount: result.pages?.length || 0,
       hasUsefulText: text.replace(/\s/g, "").length >= 30,
