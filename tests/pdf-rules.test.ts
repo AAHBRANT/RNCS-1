@@ -3,6 +3,7 @@ import test from "node:test";
 import { extractRncInformation } from "../lib/pdf/extract-rnc-information";
 import { processRncAttachment } from "../lib/pdf/process-rnc-attachment";
 import { analysisStatusFromEmailBody } from "../lib/rnc-analysis";
+import { explicitSentIdentities } from "../lib/outlook-sync";
 
 test("identifica número e ano da RNC", () => {
   assert.deepEqual(
@@ -78,4 +79,13 @@ test("usa o corpo oficial como fonte secundária inequívoca", () => {
     "Reprovada",
   );
   assert.equal(analysisStatusFromEmailBody("Encaminhamos a análise em anexo."), null);
+});
+
+test("não atribui resposta às RNCs apenas citadas no histórico", () => {
+  const result = explicitSentIdentities(
+    "RES: Encaminhamento das RNC 143/2026, 144/2026, 145/2026 e 146/2026",
+    "Prezados, encaminhamos somente a RNC 146.\nDe: Supervisão\nForam emitidas as RNC 143/2026, 144/2026, 145/2026 e 146/2026.",
+    ["Resposta RNC 146_2026.pdf"],
+  );
+  assert.deepEqual(result, [{ number: "146", year: 2026 }]);
 });

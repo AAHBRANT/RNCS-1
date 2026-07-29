@@ -81,6 +81,42 @@ function identityIsStrong(identity: Identity, subject: string, attachmentNames: 
   return matcher.test(subject) || attachmentNames.some((name) => matcher.test(name));
 }
 
+function newMessageBody(body: string) {
+  const replyMarkers = [
+    /\bDe:\s+/i,
+    /\bFrom:\s+/i,
+    /\bEnviad[ao]\s+em:\s+/i,
+    /\bSent:\s+/i,
+    /-{2,}\s*Mensagem original\s*-{2,}/i,
+    /-{2,}\s*Original Message\s*-{2,}/i,
+  ];
+  let end = body.length;
+  for (const marker of replyMarkers) {
+    const index = body.search(marker);
+    if (index >= 0) end = Math.min(end, index);
+  }
+  return body.slice(0, end).trim();
+}
+
+export function explicitSentIdentities(subject: string, body: string, attachmentNames: string[]) {
+  const currentBody = newMessageBody(body);
+  const identities = extractIdentities("", attachmentNames, currentBody);
+  const years = [...new Set(
+    [...subject.matchAll(/\b(20\d{2})\b/g)].map((match) => Number(match[1])),
+  )];
+  const inferredYear = years.length === 1 ? years[0] : null;
+  if (inferredYear) {
+    for (const match of currentBody.matchAll(
+      /\b(?:somente|apenas|exclusivamente)?\s*(?:a\s+)?(?:RNC\s*(?:N[º°o.]?\s*)?)?(\d{1,5})\b/gi,
+    )) {
+      const nearby = currentBody.slice(Math.max(0, match.index! - 35), match.index! + match[0].length + 20);
+      if (!/\b(?:RNC|somente|apenas|exclusivamente)\b/i.test(nearby)) continue;
+      identities.push({ number: match[1].padStart(3, "0"), year: inferredYear });
+    }
+  }
+  return [...new Map(identities.map((identity) => [`${identity.number}/${identity.year}`, identity])).values()];
+}
+
 function classifyType(text: string) {
   const source = normalize(text);
   if (/dds|trabalho em altura|andaime|banheiro quimico|seguranca|acidente|epi|risco/.test(source)) return "Segurança do Trabalho";
@@ -355,6 +391,12 @@ async function processMessage(
   const combined = `${subject}\n${body}\n${attachmentNames.join("\n")}\n${documentText}`;
   const workName = ONLY_WORK;
   let identities = extractIdentities(subject, attachmentNames, body);
+  if (officialSent) {
+    const explicit = explicitSentIdentities(subject, body, attachmentNames);
+    // When the current reply or its attachments identify one or more RNCs,
+    // quoted subjects and historical thread text cannot expand that set.
+    if (explicit.length) identities = explicit;
+  }
   let conversationLinked = false;
   if (!identities.length && message.conversationId) {
     const linkedEvents = await getDb().select({ rncId: emailEvents.rncId }).from(emailEvents)
@@ -378,6 +420,19 @@ async function processMessage(
   const isAnalysis = officialIncoming
     && /encaminhamento de analise(?:s)? de tratativa(?:s)? do(?:s)? rnc/i.test(normalize(subject));
   const eventType = officialSent ? "envio_resposta" : isAnalysis ? "retorno_supervisao" : "recebimento";
+
+  if (officialSent) {
+    const validKeys = new Set(identities.map((identity) => `${identity.number}/${identity.year}`));
+    const previousLinks = await db.select().from(emailEvents)
+      .where(eq(emailEvents.outlookMessageId, message.id));
+    for (const previous of previousLinks) {
+      const [linked] = await db.select({ number: rncs.number, year: rncs.year }).from(rncs)
+        .where(eq(rncs.id, previous.rncId)).limit(1);
+      if (linked && !validKeys.has(`${linked.number}/${linked.year}`)) {
+        await db.delete(emailEvents).where(eq(emailEvents.id, previous.id));
+      }
+    }
+  }
 
   for (const identity of identities) {
     if ((officialSent || isAnalysis) && !identityIsStrong(identity, subject, attachmentNames) && !conversationLinked) continue;
