@@ -1,5 +1,7 @@
 import { synchronizeOutlook } from "../../../../../lib/outlook-sync";
 
+export const maxDuration = 300;
+
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;

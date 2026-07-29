@@ -598,7 +598,10 @@ async function fullMailboxDossierScan(accessToken: string, target?: Identity, cu
     : `"participants:${OFFICIAL_EMAIL}"`);
   const page = await graph<GraphPage<GraphMessage>>(
     accessToken,
-    cursor || `/me/messages?$search=${search}&$select=${select}&$top=5`,
+    // A single message can contain several large PDFs. Keeping the serverless
+    // batch at one message prevents the platform from terminating the request
+    // before the continuation cursor can be returned to the browser.
+    cursor || `/me/messages?$search=${search}&$select=${select}&$top=1`,
   );
   const messages = page.value;
   messages.sort((a, b) =>

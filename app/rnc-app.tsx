@@ -192,7 +192,7 @@ export function RncApp() {
         messagesAnalyzed: 0, newRncs: 0, updatedRncs: 0, ownersIdentified: 0,
         sentDatesCorrected: 0, returnsProcessed: 0, statusesUpdated: 0,
       };
-      while (!complete && batches < 100) {
+      while (!complete && batches < 500) {
         const response = await fetch("/api/outlook/sync", {
           method: "POST",
           headers: { "content-type": "application/json" },
