@@ -11,6 +11,9 @@ export async function extractPdfText(pdfBuffer: Buffer): Promise<PdfTextExtracti
 
   // Loading pdf-parse only inside the request avoids evaluating its worker
   // bootstrap while a Vercel route module is being initialized.
+  // The worker module also installs the DOMMatrix, Path2D and ImageData
+  // implementations required by PDF.js in a Node/Vercel environment.
+  await import("pdf-parse/worker");
   const module = await import("pdf-parse");
   const parser = new module.PDFParse({ data: new Uint8Array(pdfBuffer) });
   try {
