@@ -13,6 +13,13 @@ type Rnc = {
 };
 type Audit = { id: number; field: string; oldValue: string | null; newValue: string | null; changedAt: string; userName: string };
 type EmailEvent = { id: number; eventType: string; sender: string | null; recipients: string | null; subject: string | null; summary: string | null; occurredAt: string; folderName: string | null; attachmentMetadata: string | null; conversationId?: string | null; internetMessageId?: string | null; inReplyTo?: string | null; references?: string | null; associationConfidence?: number };
+type AttachmentAudit = {
+  id: string; name: string; contentType: string; size: number; extractionMethod?: string;
+  extractedText?: string; pageCount?: number; needsOcr?: boolean; processingError?: string | null;
+  identifiedRncNumber?: string | null; identifiedYear?: number | null;
+  identifiedResponsible?: string | null; identifiedStatus?: string | null;
+  matchedStatusText?: string | null; processedAt?: string;
+};
 type Conflict = { id: number; field: string; candidateValues: string; status: string };
 type OutlookStatus = {
   configured: boolean;
@@ -34,6 +41,11 @@ function fmt(value?: string | null) {
   if (!value) return "—";
   const date = value.length === 10 ? parseLocal(value) : new Date(value);
   return new Intl.DateTimeFormat("pt-BR").format(date);
+}
+
+function attachmentsFromEvent(event: EmailEvent) {
+  try { return JSON.parse(event.attachmentMetadata || "[]") as AttachmentAudit[]; }
+  catch { return []; }
 }
 function businessDayDelta(fromValue: string, toValue: string) {
   const from = parseLocal(fromValue); const to = parseLocal(toValue);
@@ -414,7 +426,16 @@ export function RncApp() {
           <dl><div><dt>Tipo</dt><dd>{selected.type}</dd><small>{sourceFor(selected, "type")}</small><small className="confidence">{confidenceFor(selected, "type")}</small></div><div><dt>Recebimento</dt><dd>{fmt(selected.receivedAt)}</dd><small>{sourceFor(selected, "receivedAt")}</small><small className="confidence">{confidenceFor(selected, "receivedAt")}</small></div><div><dt>Prazo</dt><dd>{fmt(selected.dueAt)}</dd></div><div><dt>Envio</dt><dd>{fmt(selected.sentAt)}</dd><small>{sourceFor(selected, "sentAt")}</small><small className="confidence">{confidenceFor(selected, "sentAt")}</small></div><div><dt>Retorno</dt><dd>{fmt(selected.returnedAt)}</dd><small>{sourceFor(selected, "returnedAt")}</small><small className="confidence">{confidenceFor(selected, "returnedAt")}</small></div><div><dt>Status</dt><dd>{selected.status}</dd><small>{sourceFor(selected, "status")}</small><small className="confidence">{confidenceFor(selected, "status")}</small></div><div><dt>Resp. pela resposta</dt><dd>{selected.responseOwner || "Não identificado"}</dd><small>{sourceFor(selected, "responseOwner")}</small><small className="confidence">{confidenceFor(selected, "responseOwner")}</small></div><div><dt>Resp. pela análise</dt><dd>{selected.analysisOwner || "Não identificado"}</dd></div></dl>
           {conflicts.some((item) => item.status === "open") && <section className="conflict"><strong>Informações divergentes encontradas</strong><p>Revise os dados candidatos e selecione manualmente o valor correto.</p>{conflicts.filter((item) => item.status === "open").map((item) => <small key={item.id}>{item.field}: {JSON.parse(item.candidateValues).join(" · ")}</small>)}</section>}
           <section className="notes"><h4>Observações internas</h4><p>{selected.notes || "Nenhuma observação registrada."}</p></section>
-          <section className="timeline"><h4>Dossiê e histórico oficial de e-mails</h4>{emails.length ? emails.map((event) => <div className="timeline-item" key={`email-${event.id}`}><i /><div><strong>{event.eventType.replaceAll("_", " ")}</strong><p>{event.subject}</p><small>{fmt(event.occurredAt)} · {event.folderName || "Outlook"}</small><small>Vínculo {"★".repeat(event.associationConfidence || 0)}{"☆".repeat(5 - (event.associationConfidence || 0))}{event.conversationId ? " · Conversation ID confirmado" : ""}</small></div></div>) : <p className="muted">Nenhum e-mail oficial vinculado.</p>}</section>
+          <section className="timeline"><h4>Dossiê e histórico oficial de e-mails</h4>{emails.length ? emails.map((event) => <div className="timeline-item" key={`email-${event.id}`}><i /><div><strong>{event.eventType.replaceAll("_", " ")}</strong><p>{event.subject}</p><small>{fmt(event.occurredAt)} · {event.folderName || "Outlook"}</small><small>Vínculo {"★".repeat(event.associationConfidence || 0)}{"☆".repeat(5 - (event.associationConfidence || 0))}{event.conversationId ? " · Conversation ID confirmado" : ""}</small>
+            {attachmentsFromEvent(event).map((attachment) => <details className="attachment-audit" key={attachment.id}>
+              <summary>{attachment.name} · {attachment.needsOcr ? "OCR necessário" : attachment.extractionMethod === "PDF_TEXT" ? `${attachment.pageCount || "?"} pág. · texto extraído` : "anexo registrado"}</summary>
+              {attachment.processingError && <small>{attachment.processingError}</small>}
+              {attachment.identifiedResponsible && <small>Responsável identificado: {attachment.identifiedResponsible}</small>}
+              {attachment.identifiedStatus && <small>Status identificado: {attachment.identifiedStatus}{attachment.matchedStatusText ? ` (${attachment.matchedStatusText})` : ""}</small>}
+              {attachment.identifiedRncNumber && <small>Documento: RNC {attachment.identifiedRncNumber}/{attachment.identifiedYear || selected.year}</small>}
+              {attachment.extractedText && <pre>{attachment.extractedText}</pre>}
+            </details>)}
+          </div></div>) : <p className="muted">Nenhum e-mail oficial vinculado.</p>}</section>
           <section className="timeline"><h4>Histórico de alterações</h4>{history.length ? history.map((h) => <div className="timeline-item" key={h.id}><i /><div><strong>{labelByField[h.field] || h.field}</strong><p>{h.oldValue ? `${h.oldValue} → ` : ""}{h.newValue}</p><small>{fmt(h.changedAt)} · {h.userName}</small></div></div>) : <p className="muted">Nenhuma alteração manual adicional.</p>}</section>
         </div>
         <div className="drawer-footer split"><button className="button secondary" onClick={() => reprocessRnc(selected)} disabled={syncing}>Reprocessar RNC</button><button className="button primary" onClick={() => setEditing(selected)}>Editar RNC</button></div>

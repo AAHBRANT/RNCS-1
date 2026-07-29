@@ -65,6 +65,7 @@ td small { display:block; color:#829089; margin-top:4px; font-size:9px; white-sp
 .type-tag { display:inline-block; padding:5px 7px; color:#53625b; background:#eff3f0; border-radius:6px; white-space:nowrap; font-size:9px; font-weight:700; }
 .status { display:inline-block; border-radius:999px; padding:5px 8px; background:#eef1ef; color:#5d6963; font-size:9px; font-weight:800; white-space:nowrap; }
 .status-recebida{background:#fff0cd;color:#9b6815}.status-em-elaboracao{background:#f0e9ff;color:#7352a5}.status-respondida{background:#e4f0ff;color:#316fab}.status-aprovada{background:#e1f5e8;color:#267147}.status-reprovada{background:#ffe8e6;color:#a5413b}.status-reaberta{background:#efe8fa;color:#74519f}
+.attachment-audit{margin-top:8px;border:1px solid #e4e9e6;border-radius:8px;padding:7px 9px;background:#fafcfb}.attachment-audit summary{cursor:pointer;font-size:10px;font-weight:700;color:#385648}.attachment-audit small{display:block;margin-top:5px}.attachment-audit pre{max-height:220px;overflow:auto;white-space:pre-wrap;font:10px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;background:#f1f5f2;padding:8px;border-radius:6px;color:#33443b}
 .dots { border:0; background:transparent; color:#86918b; }
 .row-actions { white-space:nowrap; }
 .respond-button { border:1px solid #bcd4c7; color:var(--green); background:#f4faf6; border-radius:7px; padding:6px 8px; font-size:9px; font-weight:800; text-transform:uppercase; }

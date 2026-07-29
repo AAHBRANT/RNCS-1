@@ -4,6 +4,8 @@ import {
   auditLog, emailEvents, outlookConnections, outlookSyncFolders, rncConflicts, rncs, syncRuns, works,
 } from "../db/schema";
 import { encryptToken, refreshAccessToken } from "./outlook-auth";
+import { processRncAttachment } from "./pdf/process-rnc-attachment";
+import type { ProcessRncAttachmentResult } from "./pdf/types";
 
 type FolderKind = "inbox" | "sent";
 type GraphFolder = { id: string; displayName: string; childFolderCount?: number };
@@ -23,7 +25,14 @@ type GraphMessage = {
 };
 type GraphPage<T> = { value: T[]; "@odata.nextLink"?: string; "@odata.deltaLink"?: string };
 type Identity = { number: string; year: number };
-type AttachmentInfo = { id: string; name: string; contentType: string; size: number; extractedText?: string };
+type AttachmentInfo = {
+  id: string;
+  name: string;
+  contentType: string;
+  size: number;
+  extractedText?: string;
+  pdfProcessing?: ProcessRncAttachmentResult;
+};
 type Confidence = { score: number; reason: string };
 type SyncStats = {
   messagesAnalyzed: number; newRncs: number; updatedRncs: number; ownersIdentified: number;
@@ -165,13 +174,6 @@ async function extractAttachmentText(attachment: GraphAttachment) {
       const mammoth = await import("mammoth");
       return (await mammoth.extractRawText({ buffer })).value.slice(0, 30_000);
     }
-    if (/\.pdf$/i.test(attachment.name)) {
-      const module = await import("pdf-parse") as unknown as { PDFParse: new (options: { data: Buffer }) => { getText(): Promise<{ text: string }>; destroy(): Promise<void> } };
-      const parser = new module.PDFParse({ data: buffer });
-      const result = await parser.getText();
-      await parser.destroy();
-      return result.text.slice(0, 30_000);
-    }
     if (/\.txt$/i.test(attachment.name)) return buffer.toString("utf8").slice(0, 30_000);
   } catch {
     return "";
@@ -192,7 +194,16 @@ async function attachmentsForMessage(accessToken: string, message: GraphMessage)
     if (info.size <= 12_000_000 && /\.(pdf|docx|txt)$/i.test(info.name)) {
       const detail = await graph<GraphAttachment>(accessToken,
         `/me/messages/${encodeURIComponent(message.id)}/attachments/${encodeURIComponent(attachment.id)}`);
-      info.extractedText = await extractAttachmentText(detail);
+      if (/\.pdf$/i.test(info.name) && detail.contentBytes) {
+        info.pdfProcessing = await processRncAttachment({
+          fileName: info.name,
+          contentType: info.contentType,
+          contentBuffer: Buffer.from(detail.contentBytes, "base64"),
+        });
+        info.extractedText = info.pdfProcessing.information?.extractedText.slice(0, 30_000) || "";
+      } else {
+        info.extractedText = await extractAttachmentText(detail);
+      }
     }
     result.push(info);
   }
@@ -235,6 +246,53 @@ function analysisStatus(documentText: string): { status: string; confidence: Con
     status: "Retorno recebido — status a confirmar",
     confidence: { score: 2, reason: "Documento analisado, mas sem resultado inequívoco." },
   };
+}
+
+function confidenceScore(value: "HIGH" | "MEDIUM" | "LOW") {
+  return value === "HIGH" ? 5 : value === "MEDIUM" ? 3 : 1;
+}
+
+function pdfInformationForIdentity(attachments: AttachmentInfo[], identity: Identity) {
+  const conflicts: string[] = [];
+  const matching = attachments.flatMap((attachment) => {
+    const information = attachment.pdfProcessing?.information;
+    if (!information) return [];
+    if (information.rncNumber && information.rncNumber !== identity.number) {
+      conflicts.push(`${attachment.name}: RNC ${information.rncNumber}${information.year ? `/${information.year}` : ""}`);
+      return [];
+    }
+    if (information.year && information.year !== identity.year) {
+      conflicts.push(`${attachment.name}: RNC ${information.rncNumber || "?"}/${information.year}`);
+      return [];
+    }
+    return [information];
+  });
+  return { matching, conflicts };
+}
+
+function attachmentAuditMetadata(attachments: AttachmentInfo[]) {
+  return attachments.map((attachment) => {
+    const processing = attachment.pdfProcessing;
+    return {
+      id: attachment.id,
+      name: attachment.name,
+      contentType: attachment.contentType,
+      size: attachment.size,
+      extractionMethod: processing?.information?.extractionMethod
+        || (processing?.needsOcr ? "NONE" : attachment.extractedText ? "DOCUMENT_TEXT" : "NONE"),
+      extractedText: attachment.extractedText || "",
+      pageCount: processing?.pageCount || 0,
+      needsOcr: processing?.needsOcr || false,
+      processingError: processing?.error || null,
+      identifiedRncNumber: processing?.information?.rncNumber || null,
+      identifiedYear: processing?.information?.year || null,
+      identifiedResponsible: processing?.information?.responsible || null,
+      identifiedStatus: processing?.information?.analysisStatus || null,
+      matchedStatusText: processing?.information?.matchedStatusText || null,
+      confidence: processing?.information?.confidence || null,
+      processedAt: new Date().toISOString(),
+    };
+  });
 }
 
 function parsedJson<T>(value: string | null | undefined, fallback: T): T {
@@ -317,7 +375,17 @@ async function processMessage(
     if (!rnc && eventType !== "recebimento") continue;
 
     const description = descriptionFromAttachment(identity, attachmentNames);
-    const owners = extractOwners(documentText);
+    const pdfInformation = pdfInformationForIdentity(attachments, identity);
+    const pdfOwners = pdfInformation.matching
+      .map((information) => information.responsible)
+      .filter((value): value is string => Boolean(value));
+    const owners = [...new Set(pdfOwners.length ? pdfOwners : extractOwners(documentText))];
+    if (rnc && pdfInformation.conflicts.length) {
+      await recordConflict(rnc.id, "documentIdentity", [
+        `RNC esperada ${identity.number}/${identity.year}`,
+        ...pdfInformation.conflicts,
+      ]);
+    }
     if (!rnc) {
       const owner = owners.length === 1 ? owners[0] : "Não identificado";
       [rnc] = await db.insert(rncs).values({
@@ -361,7 +429,13 @@ async function processMessage(
         }
         if (owners.length === 1 && canAutoUpdate(rnc, "responseOwner")) {
           changes.responseOwner = owners[0]; sources.responseOwner = "Extraído do documento";
-          confidence.responseOwner = { score: 5, reason: "Nome extraído do documento original da RNC." };
+          const ownerInformation = pdfInformation.matching.find((item) => item.responsible === owners[0]);
+          confidence.responseOwner = {
+            score: ownerInformation ? confidenceScore(ownerInformation.confidence.responsible) : 4,
+            reason: ownerInformation
+              ? "Nome extraído do PDF original da RNC."
+              : "Nome extraído do documento original da RNC.",
+          };
           stats.ownersIdentified++;
         } else if (owners.length > 1) {
           await recordConflict(rnc.id, "responseOwner", owners);
@@ -383,7 +457,27 @@ async function processMessage(
           confidence.returnedAt = { score: 5, reason: "Data do e-mail oficial de retorno da Supervisão." };
         }
         if (canAutoUpdate(rnc, "status")) {
-          const result = analysisStatus(documentText);
+          const detectedStatuses = [...new Set(pdfInformation.matching
+            .map((information) => information.analysisStatus)
+            .filter((status) => status !== "STATUS_A_CONFIRMAR"))];
+          if (detectedStatuses.length > 1) await recordConflict(rnc.id, "status", detectedStatuses);
+          const selectedInformation = pdfInformation.matching.find(
+            (information) => information.analysisStatus === detectedStatuses[0],
+          );
+          const result = selectedInformation && detectedStatuses.length === 1
+            ? {
+              status: selectedInformation.analysisStatus === "APROVADA" ? "Aprovada" : "Reprovada",
+              confidence: {
+                score: confidenceScore(selectedInformation.confidence.analysisStatus),
+                reason: `Resultado "${selectedInformation.matchedStatusText}" identificado no PDF de análise.`,
+              },
+            }
+            : detectedStatuses.length > 1
+              ? {
+                status: "Retorno recebido — status a confirmar",
+                confidence: { score: 1, reason: "Documentos de análise apresentaram resultados divergentes." },
+              }
+              : analysisStatus(documentText);
           changes.status = result.status; sources.status = "Extraído do documento de análise";
           confidence.status = result.confidence;
           stats.statusesUpdated++;
@@ -406,7 +500,7 @@ async function processMessage(
       references: message.internetMessageHeaders?.find((header) => normalize(header.name || "") === "references")?.value,
       associationConfidence,
       recipients: recipientsList.join(", "), subject, summary: body.slice(0, 2000), occurredAt,
-      attachmentMetadata: JSON.stringify(attachments.map(({ extractedText: _, ...item }) => item)),
+      attachmentMetadata: JSON.stringify(attachmentAuditMetadata(attachments)),
     };
     await db.insert(emailEvents).values(eventValues).onConflictDoUpdate({
       target: [emailEvents.rncId, emailEvents.outlookMessageId],
