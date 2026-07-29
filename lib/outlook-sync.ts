@@ -461,10 +461,13 @@ async function protectOnlyRealManualCorrections() {
     corrected.set(change.rncId, fields);
   }
   for (const record of records) {
-    const wasAuditedOutlookImport = normalize(record.sourceSummary).includes("importado apos conferencia");
-    const protectedFields = wasAuditedOutlookImport
-      ? new Set<string>(parsedJson<string[]>(record.manualFields, []))
-      : corrected.get(record.id) || new Set<string>();
+    const sources = parsedJson<Record<string, string>>(record.fieldSources, {});
+    const protectedFields = new Set(
+      [...(corrected.get(record.id) || new Set<string>())].filter((field) => {
+        const source = normalize(sources[field] || "");
+        return source === "manual" || source.includes("preenchido manualmente");
+      }),
+    );
     if (record.notes) protectedFields.add("notes");
     const next = JSON.stringify([...protectedFields]);
     if (next !== record.manualFields) {
@@ -480,7 +483,7 @@ async function fullMailboxDossierScan(accessToken: string, target?: Identity, cu
   const search = encodeURIComponent(`"participants:${OFFICIAL_EMAIL}"`);
   const page = await graph<GraphPage<GraphMessage>>(
     accessToken,
-    cursor || `/me/messages?$search=${search}&$select=${select}&$top=20`,
+    cursor || `/me/messages?$search=${search}&$select=${select}&$top=5`,
   );
   const messages = page.value;
   messages.sort((a, b) =>
