@@ -193,7 +193,7 @@ async function attachmentsForMessage(accessToken: string, message: GraphMessage)
       contentType: attachment.contentType || "application/octet-stream", size: attachment.size || 0,
     };
     const isPdf = /\.pdf$/i.test(info.name);
-    const safeToProcess = isPdf ? info.size <= 4_000_000 : info.size <= 12_000_000;
+    const safeToProcess = isPdf ? info.size <= 1_500_000 : info.size <= 12_000_000;
     if (isPdf && !safeToProcess) {
       info.pdfProcessing = {
         success: false,
@@ -201,7 +201,7 @@ async function attachmentsForMessage(accessToken: string, message: GraphMessage)
         fileName: info.name,
         pageCount: 0,
         information: null,
-        error: "PDF acima de 4 MB — mantido no histórico sem leitura automática para preservar a sincronização.",
+        error: "PDF acima de 1,5 MB — mantido no histórico sem leitura automática para preservar a sincronização.",
       };
     } else if (safeToProcess && /\.(pdf|docx|txt)$/i.test(info.name)) {
       const detail = await graph<GraphAttachment>(accessToken,
@@ -632,7 +632,13 @@ async function fullMailboxDossierScan(accessToken: string, target?: Identity, cu
       path: "Pesquisa geral do Outlook",
       kind,
     };
-    addStats(stats, await processMessage(accessToken, message, folder, kind, target, true));
+    try {
+      addStats(stats, await processMessage(accessToken, message, folder, kind, target, true));
+    } catch (error) {
+      // A malformed attachment or isolated Graph response must not prevent the
+      // continuation cursor from advancing through the rest of the mailbox.
+      console.error("Mensagem ignorada durante a montagem do dossiê:", message.id, error);
+    }
   }
   return { folders, stats, nextCursor: page["@odata.nextLink"] };
 }
