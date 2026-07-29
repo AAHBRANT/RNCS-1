@@ -326,6 +326,7 @@ export function ResponseWorkspace() {
           <p>{rnc.description}</p>
           <dl>
             <div><dt>Obra</dt><dd>{rnc.workName}</dd></div>
+            <div><dt>Tipo</dt><dd>{rnc.type}</dd></div>
             <div><dt>Recebimento</dt><dd>{formatDate(rnc.receivedAt)}</dd></div>
             <div><dt>Prazo</dt><dd>{formatDate(rnc.dueAt)}</dd></div>
             <div><dt>Responsável da área inspecionada</dt><dd>{rnc.responseOwner || "Não identificado"}</dd></div>

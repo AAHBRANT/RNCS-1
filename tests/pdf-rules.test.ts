@@ -80,6 +80,28 @@ test("não aceita o contrato escrito na mesma linha do rótulo", () => {
   assert.equal(extractRncInformation("CONTRATO: VALOR INCORRETO").contract, null);
 });
 
+test("extrai exclusivamente a célula imediatamente abaixo do cabeçalho", () => {
+  const information = extractRncInformation(
+    "Texto lateral com nomes incorretos",
+    [[
+      ["RESPONSÁVEL DA ÁREA INSPECIONADA", "RESPONSÁVEL FISCAL PELA INSPEÇÃO", "CONTRATO"],
+      ["ISABELLA MARQUES\nTexto explicativo ignorado", "MARIANA LÍVIA DE MELO", "CT 02.023/2024 – UEP/SEGGOV"],
+      ["OUTRO NOME", "OUTRO FISCAL", "OUTRO CONTRATO"],
+    ]],
+  );
+  assert.equal(information.responsible, "ISABELLA MARQUES");
+  assert.equal(information.inspectionResponsible, "MARIANA LÍVIA DE MELO");
+  assert.equal(information.contract, "CT 02.023/2024 – UEP/SEGGOV");
+});
+
+test("não usa texto próximo quando o quadro não contém o campo solicitado", () => {
+  const information = extractRncInformation(
+    "RESPONSÁVEL DA ÁREA INSPECIONADA\nNOME INCORRETO",
+    [[["OUTRO CABEÇALHO"], ["OUTRO VALOR"]]],
+  );
+  assert.equal(information.responsible, null);
+});
+
 test("separa responsáveis quando o PDF extrai os dois rótulos antes dos nomes", () => {
   const information = extractRncInformation([
     "RESPONSÁVEL DA ÁREA INSPECIONADA:",

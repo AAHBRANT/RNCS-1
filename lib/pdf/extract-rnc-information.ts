@@ -1,6 +1,34 @@
 import { normalizeForSearch, normalizePdfText } from "./normalize-pdf-text";
 import type { ExtractedRncInformation, ExtractionConfidence, RncAnalysisStatus } from "./types";
 
+type PdfTable = string[][];
+
+function normalizedCell(value: string) {
+  return normalizeForSearch(value).replace(/\s*:\s*$/, "").trim();
+}
+
+function valueImmediatelyBelow(
+  tables: PdfTable[],
+  title: string,
+  options: { skipSignature?: boolean } = {},
+) {
+  const expected = normalizedCell(title);
+  for (const table of tables) {
+    for (let row = 0; row < table.length - 1; row += 1) {
+      for (let column = 0; column < table[row].length; column += 1) {
+        if (normalizedCell(table[row][column] || "") !== expected) continue;
+        const cell = String(table[row + 1]?.[column] || "");
+        const contents = normalizePdfText(cell).split("\n").map((line) => line.trim()).filter(Boolean);
+        const value = contents.find((line) =>
+          !options.skipSignature || !/^ASSINATURA\s*:?\s*$/i.test(line),
+        );
+        return value || null;
+      }
+    }
+  }
+  return null;
+}
+
 function extractRncNumber(text: string): {
   number: string | null;
   year: number | null;
@@ -176,29 +204,48 @@ function extractAnalysisStatus(text: string): {
   return { status: "STATUS_A_CONFIRMAR", matchedText: null, confidence: "LOW" };
 }
 
-export function extractRncInformation(rawText: string): ExtractedRncInformation {
+export function extractRncInformation(rawText: string, tables: PdfTable[] = []): ExtractedRncInformation {
   const rnc = extractRncNumber(rawText);
   const people = extractInspectionPeople(rawText);
   const contract = extractContract(rawText);
   const analysisReviewer = extractAnalysisReviewer(rawText);
   const analysis = extractAnalysisStatus(rawText);
+  const hasStructuredTables = tables.length > 0;
+  const structuredResponsible = valueImmediatelyBelow(tables, "RESPONSÁVEL DA ÁREA INSPECIONADA");
+  const structuredFiscal = valueImmediatelyBelow(tables, "RESPONSÁVEL FISCAL PELA INSPEÇÃO");
+  const structuredContract = valueImmediatelyBelow(tables, "CONTRATO");
+  const structuredReviewer = valueImmediatelyBelow(
+    tables,
+    "REVISOR DA ELABORAÇÃO DO RNC",
+    { skipSignature: true },
+  );
+  const responsible = structuredResponsible
+    ? cleanResponsibleName(structuredResponsible)
+    : hasStructuredTables ? null : people.responsible.value;
+  const inspectionResponsible = structuredFiscal
+    ? cleanResponsibleName(structuredFiscal)
+    : hasStructuredTables ? null : people.inspectionResponsible.value;
+  const contractValue = structuredContract?.trim() || (hasStructuredTables ? null : contract.value);
+  const reviewerValue = structuredReviewer
+    ? cleanResponsibleName(structuredReviewer)
+    : hasStructuredTables ? null : analysisReviewer.value;
   return {
     rncNumber: rnc.number,
     year: rnc.year,
-    responsible: people.responsible.value,
-    inspectionResponsible: people.inspectionResponsible.value,
-    contract: contract.value,
-    analysisReviewer: analysisReviewer.value,
+    responsible,
+    inspectionResponsible,
+    contract: contractValue,
+    analysisReviewer: reviewerValue,
     analysisStatus: analysis.status,
     matchedStatusText: analysis.matchedText,
     extractedText: normalizePdfText(rawText),
     extractionMethod: "PDF_TEXT",
     confidence: {
       rncNumber: rnc.confidence,
-      responsible: people.responsible.confidence,
-      inspectionResponsible: people.inspectionResponsible.confidence,
-      contract: contract.confidence,
-      analysisReviewer: analysisReviewer.confidence,
+      responsible: structuredResponsible ? "HIGH" : hasStructuredTables ? "LOW" : people.responsible.confidence,
+      inspectionResponsible: structuredFiscal ? "HIGH" : hasStructuredTables ? "LOW" : people.inspectionResponsible.confidence,
+      contract: structuredContract ? "HIGH" : hasStructuredTables ? "LOW" : contract.confidence,
+      analysisReviewer: structuredReviewer ? "HIGH" : hasStructuredTables ? "LOW" : analysisReviewer.confidence,
       analysisStatus: analysis.confidence,
     },
   };
