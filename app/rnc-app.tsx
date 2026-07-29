@@ -51,6 +51,17 @@ function todayInBrazil() {
     day: "2-digit",
   }).format(new Date());
 }
+function hasAnsweredStatus(rnc: Rnc) {
+  return [
+    "Respondida",
+    "Aprovada",
+    "Reprovada",
+    "Retorno recebido — status a confirmar",
+  ].includes(rnc.status);
+}
+function hasBeenAnswered(rnc: Rnc) {
+  return Boolean(rnc.sentAt) || hasAnsweredStatus(rnc);
+}
 function deadlineResult(rnc: Rnc) {
   const comparison = rnc.sentAt || todayInBrazil();
   const delta = businessDayDelta(rnc.dueAt, comparison);
@@ -59,6 +70,9 @@ function deadlineResult(rnc: Rnc) {
     if (delta > 0) return { delta, label: `Respondida com ${delta} ${delta === 1 ? "dia útil" : "dias úteis"} de atraso` };
     const early = Math.abs(delta);
     return { delta, label: `Respondida ${early} ${early === 1 ? "dia útil" : "dias úteis"} antes do prazo` };
+  }
+  if (hasAnsweredStatus(rnc)) {
+    return { delta: 0, label: "Respondida — data do envio não identificada" };
   }
   if (delta > 0) return { delta, label: `${delta} ${delta === 1 ? "dia útil" : "dias úteis"} em atraso` };
   if (delta === 0) return { delta, label: "Vence hoje" };
@@ -69,6 +83,7 @@ function urgency(rnc: Rnc) {
   if (rnc.status === "Aprovada") return "approved";
   if (rnc.status === "Reprovada") return "rejected";
   if (rnc.sentAt) return deadlineResult(rnc).delta > 0 ? "answered-late" : "answered";
+  if (hasAnsweredStatus(rnc)) return "answered";
   if (rnc.status === "Não identificado" || rnc.type === "A classificar") return "unclassified";
   const delta = deadlineResult(rnc).delta;
   if (delta > 0) return "overdue";
@@ -185,8 +200,11 @@ export function RncApp() {
     approved: rows.filter((r) => r.status === "Aprovada").length,
     rejected: rows.filter((r) => r.status === "Reprovada").length,
     reopened: rows.filter((r) => r.status === "Reaberta").length,
-    onTime: rows.filter((r) => deadlineResult(r).delta <= 0).length,
-    overdue: rows.filter((r) => !r.sentAt && deadlineResult(r).delta > 0).length,
+    onTime: rows.filter((r) =>
+      (!hasBeenAnswered(r) && deadlineResult(r).delta <= 0)
+      || (!!r.sentAt && deadlineResult(r).delta <= 0)
+    ).length,
+    overdue: rows.filter((r) => !hasBeenAnswered(r) && deadlineResult(r).delta > 0).length,
     answeredLate: rows.filter((r) => !!r.sentAt && deadlineResult(r).delta > 0).length,
   }), [rows]);
 
