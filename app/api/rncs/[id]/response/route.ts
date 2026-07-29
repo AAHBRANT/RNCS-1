@@ -26,6 +26,13 @@ const textFields = [
   "conclusion",
   "agentResponse",
   "emailBody",
+  "locationFront",
+  "contract",
+  "observations",
+  "photoLegend1",
+  "photoLegend2",
+  "photoLegend3",
+  "photoLegend4",
 ] as const;
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {

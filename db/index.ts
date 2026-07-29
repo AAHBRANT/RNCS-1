@@ -189,6 +189,13 @@ async function initializeDatabaseOnce() {
   )`;
   await sql`CREATE INDEX IF NOT EXISTS rnc_response_versions_rnc_idx ON rnc_response_versions(rnc_id)`;
   await sql`ALTER TABLE rnc_response_drafts ADD COLUMN IF NOT EXISTS updated_by TEXT NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE rnc_response_drafts ADD COLUMN IF NOT EXISTS location_front TEXT NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE rnc_response_drafts ADD COLUMN IF NOT EXISTS contract TEXT NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE rnc_response_drafts ADD COLUMN IF NOT EXISTS observations TEXT NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE rnc_response_drafts ADD COLUMN IF NOT EXISTS photo_legend_1 TEXT NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE rnc_response_drafts ADD COLUMN IF NOT EXISTS photo_legend_2 TEXT NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE rnc_response_drafts ADD COLUMN IF NOT EXISTS photo_legend_3 TEXT NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE rnc_response_drafts ADD COLUMN IF NOT EXISTS photo_legend_4 TEXT NOT NULL DEFAULT ''`;
   await sql`ALTER TABLE rnc_response_versions ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT ''`;
   await sql`CREATE TABLE IF NOT EXISTS rnc_response_documents (
     id SERIAL PRIMARY KEY,

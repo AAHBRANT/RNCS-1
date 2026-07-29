@@ -22,6 +22,8 @@ type Attachment = {
 type Draft = {
   directive: string; analysis: string; actionsTaken: string; technicalResponse: string;
   evidence: string; conclusion: string; agentResponse: string; emailBody: string;
+  locationFront: string; contract: string; observations: string;
+  photoLegend1: string; photoLegend2: string; photoLegend3: string; photoLegend4: string;
   selectedAttachments: string; status: string; updatedAt?: string;
   updatedBy?: string;
 };
@@ -34,6 +36,8 @@ type AccessUser = { name: string; email: string; role: "admin" | "drafter" | "re
 const emptyDraft: Draft = {
   directive: "", analysis: "", actionsTaken: "", technicalResponse: "",
   evidence: "", conclusion: "", agentResponse: "", emailBody: "",
+  locationFront: "", contract: "", observations: "",
+  photoLegend1: "", photoLegend2: "", photoLegend3: "", photoLegend4: "",
   selectedAttachments: "[]", status: "Rascunho",
 };
 
@@ -63,6 +67,7 @@ export function ResponseWorkspace() {
   const [emails, setEmails] = useState<EmailEvent[]>([]);
   const [versions, setVersions] = useState<Version[]>([]);
   const [documents, setDocuments] = useState<WordDocument[]>([]);
+  const [photos, setPhotos] = useState<Array<File | null>>([null, null, null, null]);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [selectedAttachments, setSelectedAttachments] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -100,6 +105,7 @@ export function ResponseWorkspace() {
         setVersions(data.versions || []);
         setAccessUser(data.user || null);
         setDocuments(documentData.documents || []);
+        setPhotos([null, null, null, null]);
         const loaded = data.draft || emptyDraft;
         setDraft({ ...emptyDraft, ...loaded });
         try { setSelectedAttachments(JSON.parse(loaded.selectedAttachments || "[]")); }
@@ -195,6 +201,52 @@ export function ResponseWorkspace() {
     }
   }
 
+  async function generateDocument() {
+    if (!rnc) return;
+    setBusy(true);
+    try {
+      const form = new FormData();
+      form.set("draft", JSON.stringify(draft));
+      photos.forEach((photo, index) => {
+        if (photo) form.set(`photo${index + 1}`, photo);
+      });
+      const response = await fetch(`/api/rncs/${rnc.id}/response/generate-document`, {
+        method: "POST",
+        body: form,
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Não foi possível gerar o documento.");
+      }
+      const blob = await response.blob();
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `Tratativa_RNC_${rnc.number}_${rnc.year}.docx`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+
+      const saveResponse = await fetch(`/api/rncs/${rnc.id}/response`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...draft, selectedAttachments }),
+      });
+      const saveData = await saveResponse.json();
+      if (!saveResponse.ok) throw new Error(saveData.error || "O Word foi gerado, mas os campos não foram salvos.");
+      const [documentData, responseData] = await Promise.all([
+        fetch(`/api/rncs/${rnc.id}/response/document`).then((item) => item.json()),
+        fetch(`/api/rncs/${rnc.id}/response`).then((item) => item.json()),
+      ]);
+      setDocuments(documentData.documents || []);
+      setVersions(responseData.versions || []);
+      setDraft((current) => ({ ...current, updatedAt: saveData.draft.updatedAt }));
+      setNotice(`Word preenchido, salvo e baixado como versão ${response.headers.get("x-document-version") || ""}.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Não foi possível gerar o documento.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function restoreVersion(version: Version) {
     try {
       const snapshot = JSON.parse(version.snapshot) as Partial<Draft> & { selectedAttachments?: string };
@@ -267,6 +319,24 @@ export function ResponseWorkspace() {
             <EditorField title="Evidências" value={draft.evidence} onChange={(value) => update("evidence", value)} />
             <EditorField title="Conclusão" value={draft.conclusion} onChange={(value) => update("conclusion", value)} />
           </div>
+          <section className="template-fields">
+            <div><strong>Campos do modelo Word</strong><p>Estas informações substituem automaticamente os campos entre colchetes do modelo.</p></div>
+            <div className="editor-grid">
+              <EditorField title="Local / frente de serviço" value={draft.locationFront} onChange={(value) => update("locationFront", value)} rows={3} />
+              <EditorField title="Contrato" value={draft.contract} onChange={(value) => update("contract", value)} rows={3} />
+            </div>
+            <EditorField title="Observações da tratativa" value={draft.observations} onChange={(value) => update("observations", value)} rows={4} />
+            <div className="photo-grid">
+              {[0, 1, 2, 3].map((index) => {
+                const legendField = `photoLegend${index + 1}` as keyof Draft;
+                return <div key={index}>
+                  <label><span>Foto {index + 1}</span><input type="file" accept="image/png,image/jpeg" onChange={(event) => setPhotos((current) => current.map((item, itemIndex) => itemIndex === index ? event.target.files?.[0] || null : item))} /></label>
+                  <EditorField title={`Legenda ${index + 1}`} value={String(draft[legendField] || "")} onChange={(value) => update(legendField, value)} rows={2} />
+                </div>;
+              })}
+            </div>
+            <small className="template-note">O número, ano, data de emissão, descrição e responsável são preenchidos com os dados já cadastrados na RNC. Fotos: PNG ou JPEG, até 800 KB cada.</small>
+          </section>
           <div className="agent-transfer">
             <div><strong>Usar o agente de RNC</strong><p>Copie o contexto, abra o agente e cole a resposta produzida no campo abaixo.</p></div>
             <div className="form-actions">
@@ -291,6 +361,9 @@ export function ResponseWorkspace() {
               />
               <small>Formato .docx · máximo 3 MB</small>
             </div>
+            <button className="button primary generate-word" type="button" onClick={generateDocument} disabled={busy}>
+              {busy ? "Gerando…" : "Gerar e baixar Word preenchido"}
+            </button>
             <div className="word-versions">
               {documents.length ? documents.map((document, index) => <div key={document.id} className={index === 0 ? "latest" : ""}>
                 <span><strong>{index === 0 ? "Versão atual" : `Versão ${document.version}`}</strong><small>{document.fileName} · {(document.size / 1024).toFixed(0)} KB</small><small>{formatDate(document.createdAt)} · {document.uploadedBy}</small></span>
