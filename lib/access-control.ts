@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { ensureDatabase, getDb } from "../db";
 import { accessUsers } from "../db/schema";
 import { decryptToken, encryptToken } from "./outlook-auth";
@@ -31,8 +31,14 @@ const setupSession: AccessSession = {
 
 export async function accessUserByEmail(email: string) {
   await ensureDatabase();
+  const normalized = email.trim().toLowerCase();
+  const localPart = normalized.split("@")[0];
   const [user] = await getDb().select().from(accessUsers)
-    .where(eq(accessUsers.email, email.trim().toLowerCase())).limit(1);
+    .where(
+      normalized.includes("@")
+        ? sql`LOWER(${accessUsers.email}) = ${normalized} OR SPLIT_PART(LOWER(${accessUsers.email}), '@', 1) = ${localPart}`
+        : eq(accessUsers.email, normalized),
+    ).limit(1);
   return user?.active ? user : null;
 }
 

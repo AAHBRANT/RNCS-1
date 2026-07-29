@@ -31,8 +31,14 @@ export async function GET(request: NextRequest) {
     });
     if (!profileResponse.ok) throw new Error("Não foi possível consultar o perfil corporativo.");
     const profile = await profileResponse.json() as { mail?: string; userPrincipalName?: string };
-    const email = (profile.mail || profile.userPrincipalName || "").trim().toLowerCase();
-    const user = await accessUserByEmail(email);
+    const addresses = [profile.mail, profile.userPrincipalName]
+      .filter((value): value is string => Boolean(value))
+      .map((value) => value.trim().toLowerCase());
+    let user: Awaited<ReturnType<typeof accessUserByEmail>> = null;
+    for (const address of addresses) {
+      user = await accessUserByEmail(address);
+      if (user) break;
+    }
     if (!user) throw new Error("Esta conta não está autorizada a acessar o Controle de RNC.");
 
     const response = NextResponse.redirect(destination);
