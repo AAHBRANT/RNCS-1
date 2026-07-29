@@ -1,4 +1,3 @@
-import { PDFParse } from "pdf-parse";
 import { normalizePdfText } from "./normalize-pdf-text";
 
 export interface PdfTextExtractionResult {
@@ -10,7 +9,10 @@ export interface PdfTextExtractionResult {
 export async function extractPdfText(pdfBuffer: Buffer): Promise<PdfTextExtractionResult> {
   if (!pdfBuffer.length) throw new Error("O arquivo PDF está vazio.");
 
-  const parser = new PDFParse({ data: new Uint8Array(pdfBuffer) });
+  // Loading pdf-parse only inside the request avoids evaluating its worker
+  // bootstrap while a Vercel route module is being initialized.
+  const module = await import("pdf-parse");
+  const parser = new module.PDFParse({ data: new Uint8Array(pdfBuffer) });
   try {
     const result = await parser.getText();
     const text = normalizePdfText(result.text || "");
