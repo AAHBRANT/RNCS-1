@@ -473,15 +473,16 @@ async function protectOnlyRealManualCorrections() {
   }
 }
 
-async function fullMailboxDossierScan(accessToken: string, target?: Identity) {
+async function fullMailboxDossierScan(accessToken: string, target?: Identity, cursor?: string) {
   const folders = await discoverFolders(accessToken);
   const byId = new Map(folders.map((folder) => [folder.id, folder]));
   const select = "id,internetMessageId,conversationId,parentFolderId,subject,bodyPreview,body,receivedDateTime,sentDateTime,sender,from,toRecipients,ccRecipients,hasAttachments,internetMessageHeaders";
   const search = encodeURIComponent(`"participants:${OFFICIAL_EMAIL}"`);
-  const messages = await allPages<GraphMessage>(
+  const page = await graph<GraphPage<GraphMessage>>(
     accessToken,
-    `/me/messages?$search=${search}&$select=${select}&$top=100`,
+    cursor || `/me/messages?$search=${search}&$select=${select}&$top=20`,
   );
+  const messages = page.value;
   messages.sort((a, b) =>
     String(a.sentDateTime || a.receivedDateTime).localeCompare(String(b.sentDateTime || b.receivedDateTime)));
   const stats = emptyStats();
@@ -498,7 +499,7 @@ async function fullMailboxDossierScan(accessToken: string, target?: Identity) {
     };
     addStats(stats, await processMessage(accessToken, message, folder, kind, target, true));
   }
-  return { folders, stats };
+  return { folders, stats, nextCursor: page["@odata.nextLink"] };
 }
 
 async function reconcileDossiers(stats: SyncStats, target?: Identity) {
@@ -557,7 +558,7 @@ async function reconcileDossiers(stats: SyncStats, target?: Identity) {
   }
 }
 
-export async function synchronizeOutlook(options: { force?: boolean; targetRncId?: number } = {}) {
+export async function synchronizeOutlook(options: { force?: boolean; targetRncId?: number; cursor?: string } = {}) {
   await ensureDatabase();
   const db = getDb();
   await protectOnlyRealManualCorrections();
@@ -582,10 +583,37 @@ export async function synchronizeOutlook(options: { force?: boolean; targetRncId
     let folders: Array<GraphFolder & { path: string; kind: FolderKind }>;
     const stats = emptyStats();
     if (options.force) {
-      const dossier = await fullMailboxDossierScan(token.access_token!, target);
+      const dossier = await fullMailboxDossierScan(token.access_token!, target, options.cursor);
       folders = dossier.folders;
       addStats(stats, dossier.stats);
-      await reconcileDossiers(stats, target);
+      if (!dossier.nextCursor) await reconcileDossiers(stats, target);
+      const complete = !dossier.nextCursor;
+      const message = complete
+        ? [
+          `${stats.messagesAnalyzed} mensagens oficiais analisadas nesta etapa`,
+          `${stats.newRncs} novas RNC encontradas`,
+          `${stats.updatedRncs} RNC atualizadas`,
+          `${stats.ownersIdentified} responsáveis identificados`,
+          `${stats.sentDatesCorrected} datas de envio corrigidas`,
+          `${stats.returnsProcessed} retornos processados`,
+          `${stats.statusesUpdated} status atualizados`,
+          "Sincronização concluída.",
+        ].join(" · ")
+        : `${stats.messagesAnalyzed} mensagens oficiais analisadas nesta etapa. Continuando automaticamente…`;
+      const finishedAt = new Date().toISOString();
+      await Promise.all([
+        db.update(outlookConnections).set({ lastSyncAt: finishedAt, lastSyncStatus: complete ? "success" : "running", lastSyncMessage: message })
+          .where(eq(outlookConnections.id, connection.id)),
+        db.update(syncRuns).set({
+          finishedAt, status: complete ? "success" : "running",
+          foldersChecked: JSON.stringify(folders.map((folder) => folder.path)),
+          importedCount: stats.eventsImported, message,
+        }).where(eq(syncRuns.id, run.id)),
+      ]);
+      return {
+        ...stats, folders: folders.length, foldersChecked: folders.map((folder) => folder.path),
+        complete, nextCursor: dossier.nextCursor, message,
+      };
     } else {
       folders = await discoverFolders(token.access_token!);
       for (const folder of folders) {

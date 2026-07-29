@@ -173,16 +173,45 @@ export function RncApp() {
     }
     setSyncing(true);
     try {
-      const response = await fetch("/api/outlook/sync", { method: "POST" });
-      const contentType = response.headers.get("content-type") || "";
-      const data = contentType.includes("application/json")
-        ? await response.json()
-        : { error: "A sincronização excedeu o tempo disponível. Tente novamente para continuar de onde parou." };
-      if (!response.ok) throw new Error(data.error || "Falha ao atualizar e-mails.");
-      setNotice(data.message);
+      let cursor: string | undefined;
+      let complete = false;
+      let batches = 0;
+      const totals = {
+        messagesAnalyzed: 0, newRncs: 0, updatedRncs: 0, ownersIdentified: 0,
+        sentDatesCorrected: 0, returnsProcessed: 0, statusesUpdated: 0,
+      };
+      while (!complete && batches < 100) {
+        const response = await fetch("/api/outlook/sync", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ cursor }),
+        });
+        const contentType = response.headers.get("content-type") || "";
+        const data = contentType.includes("application/json")
+          ? await response.json()
+          : { error: "Uma etapa da sincronização excedeu o tempo disponível. Clique novamente para tentar outra vez." };
+        if (!response.ok) throw new Error(data.error || "Falha ao atualizar e-mails.");
+        for (const key of Object.keys(totals) as Array<keyof typeof totals>) totals[key] += Number(data[key] || 0);
+        cursor = data.nextCursor;
+        complete = data.complete !== false;
+        batches++;
+        setNotice(data.message);
+      }
+      if (!complete) throw new Error("A sincronização atingiu o limite de etapas. Clique novamente para continuar.");
+      const message = [
+        `${totals.messagesAnalyzed} mensagens oficiais analisadas`,
+        `${totals.newRncs} novas RNC encontradas`,
+        `${totals.updatedRncs} RNC atualizadas`,
+        `${totals.ownersIdentified} responsáveis identificados`,
+        `${totals.sentDatesCorrected} datas de envio corrigidas`,
+        `${totals.returnsProcessed} retornos processados`,
+        `${totals.statusesUpdated} status atualizados`,
+        "Sincronização concluída.",
+      ].join(" · ");
+      setNotice(message);
       setOutlook((current) => ({
         ...current,
-        connection: { ...current.connection, lastSyncAt: new Date().toISOString(), lastSyncMessage: data.message },
+        connection: { ...current.connection, lastSyncAt: new Date().toISOString(), lastSyncMessage: message },
       }));
       await load();
     } catch (error) {
@@ -263,10 +292,22 @@ export function RncApp() {
   async function reprocessRnc(rnc: Rnc) {
     setSyncing(true);
     try {
-      const response = await fetch(`/api/rncs/${rnc.id}/reprocess`, { method: "POST" });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Falha ao reprocessar.");
-      setNotice(data.message); setSelected(null); await load();
+      let cursor: string | undefined;
+      let complete = false;
+      let batches = 0;
+      let message = "";
+      while (!complete && batches < 100) {
+        const response = await fetch(`/api/rncs/${rnc.id}/reprocess`, {
+          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cursor }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Falha ao reprocessar.");
+        cursor = data.nextCursor;
+        complete = data.complete !== false;
+        message = data.message;
+        batches++;
+      }
+      setNotice(message || "RNC reprocessada."); setSelected(null); await load();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Falha ao reprocessar.");
     } finally { setSyncing(false); }
