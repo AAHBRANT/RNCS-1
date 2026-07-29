@@ -69,7 +69,7 @@ function extractIdentities(subject: string, attachmentNames: string[], body: str
   for (const source of strongSources) {
     for (const match of source.matchAll(/\b(\d{1,6})\s*[\/_-]\s*(20\d{2}|\d{2})\b/g)) add(match[1], match[2]);
   }
-  for (const match of `${subject}\n${body}`.matchAll(/\bRNC\s*(?:N[º°o.]?\s*)?[-–—:#]?\s*(\d{1,6})\s*[\/-]\s*(20\d{2}|\d{2})\b/gi)) {
+  for (const match of `${subject}\n${body}`.matchAll(/\bRNCs?\s*(?:N[º°o.]?\s*)?[-–—:#]?\s*(\d{1,6})\s*[\/-]\s*(20\d{2}|\d{2})\b/gi)) {
     add(match[1], match[2]);
   }
   return [...found.values()];
@@ -107,10 +107,11 @@ export function explicitSentIdentities(subject: string, body: string, attachment
   const inferredYear = years.length === 1 ? years[0] : null;
   if (inferredYear) {
     for (const match of currentBody.matchAll(
-      /\b(?:somente|apenas|exclusivamente)?\s*(?:a\s+)?(?:RNC\s*(?:N[º°o.]?\s*)?)?(\d{1,5})\b/gi,
+      /\b(?:somente|apenas|exclusivamente)?\s*(?:a\s+)?(?:RNCs?\s*(?:N[º°o.]?\s*)?)?(\d{1,5})\b/gi,
     )) {
+      if (Number(match[1]) === inferredYear) continue;
       const nearby = currentBody.slice(Math.max(0, match.index! - 35), match.index! + match[0].length + 20);
-      if (!/\b(?:RNC|somente|apenas|exclusivamente)\b/i.test(nearby)) continue;
+      if (!/\b(?:RNCs?|somente|apenas|exclusivamente)\b/i.test(nearby)) continue;
       identities.push({ number: match[1].padStart(3, "0"), year: inferredYear });
     }
   }

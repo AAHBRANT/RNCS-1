@@ -98,3 +98,22 @@ test("classifica aprovacoes de varias tratativas pelo corpo do e-mail", () => {
     "Aprovada",
   );
 });
+
+test("identifica todas as RNCs declaradas no corpo atual mesmo com anexos fora do padrao", () => {
+  const result = explicitSentIdentities(
+    "RES: Encaminhamento de RNC 167/2026, 168/2026, 169/2026 e 170/2026",
+    "Encaminhamos em anexo os Relatorios de Nao Conformidade (RNCs) Nº 167/2026, 168/2026, 169/2026 e 170/2026. De: Supervisao. Assunto: RNC 167/2026 a 173/2026.",
+    [
+      "FG 13 - TRATATIVA DE RNC 167_2026.pdf",
+      "FG 13 - TRATATIVA DE RNC 168.pdf",
+      "FG 13 - TRATATIVA DE RNC 169 EPI;2026.pdf",
+      "FG 13 - TRATATIVA DE RNC 170_2026.pdf",
+    ],
+  );
+  assert.deepEqual(result, [
+    { number: "167", year: 2026 },
+    { number: "170", year: 2026 },
+    { number: "168", year: 2026 },
+    { number: "169", year: 2026 },
+  ]);
+});
