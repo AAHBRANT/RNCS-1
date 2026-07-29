@@ -23,8 +23,6 @@ function addBusinessDays(dateValue: string, days = 5) {
 
 async function ensureWorks() {
   await ensureDatabase();
-  const db = getDb();
-  await db.insert(works).values({ name: ONLY_WORK }).onConflictDoNothing();
 }
 
 export async function GET(request: Request) {
