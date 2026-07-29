@@ -173,7 +173,10 @@ export function RncApp() {
     setSyncing(true);
     try {
       const response = await fetch("/api/outlook/sync", { method: "POST" });
-      const data = await response.json();
+      const contentType = response.headers.get("content-type") || "";
+      const data = contentType.includes("application/json")
+        ? await response.json()
+        : { error: "A sincronização excedeu o tempo disponível. Tente novamente para continuar de onde parou." };
       if (!response.ok) throw new Error(data.error || "Falha ao atualizar e-mails.");
       setNotice(data.message);
       setOutlook((current) => ({

@@ -355,7 +355,10 @@ async function syncFolder(
   const [state] = await db.select().from(outlookSyncFolders).where(and(
     eq(outlookSyncFolders.connectionId, connectionId), eq(outlookSyncFolders.folderId, folder.id),
   )).limit(1);
-  const days = Math.max(1, Math.min(3650, Number(process.env.OUTLOOK_INITIAL_SYNC_DAYS || 730)));
+  // The historical archive is already persisted in the database. Keeping the
+  // first Graph pass bounded prevents a serverless timeout; the delta link
+  // stored at the end of the pass handles every subsequent message.
+  const days = Math.max(1, Math.min(120, Number(process.env.OUTLOOK_INITIAL_SYNC_DAYS || 120)));
   const since = new Date(Date.now() - days * 86400000).toISOString();
   const select = "id,internetMessageId,conversationId,subject,bodyPreview,body,receivedDateTime,sentDateTime,sender,from,toRecipients,ccRecipients,hasAttachments";
   let url = !force && state?.deltaLink
