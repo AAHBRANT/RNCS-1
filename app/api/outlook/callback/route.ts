@@ -19,11 +19,23 @@ export async function GET(request: NextRequest) {
       headers: { authorization: `Bearer ${token.access_token}` }, cache: "no-store",
     });
     if (!profileResponse.ok) throw new Error("Não foi possível confirmar a conta Microsoft.");
-    const profile = await profileResponse.json() as { mail?: string; userPrincipalName?: string };
-    const email = (profile.mail || profile.userPrincipalName || "").toLowerCase();
+    const profile = await profileResponse.json() as {
+      mail?: string;
+      userPrincipalName?: string;
+    };
     const allowed = (process.env.OUTLOOK_ACCOUNT_EMAIL || "").trim().toLowerCase();
-    if (!email || !allowed) throw new Error("OUTLOOK_ACCOUNT_EMAIL não configurada.");
-    if (email !== allowed) throw new Error(`A conta selecionada não é a conta Outlook autorizada.`);
+    const accountAddresses = [profile.mail, profile.userPrincipalName]
+      .filter((address): address is string => Boolean(address))
+      .map((address) => address.trim().toLowerCase());
+    if (!allowed) throw new Error("OUTLOOK_ACCOUNT_EMAIL não configurada.");
+    const allowedLocalPart = allowed.split("@")[0];
+    const isAuthorizedAccount = accountAddresses.some((address) => (
+      address === allowed || address.split("@")[0] === allowedLocalPart
+    ));
+    if (!isAuthorizedAccount) {
+      throw new Error(`A conta selecionada não é a conta Outlook autorizada.`);
+    }
+    const email = allowed;
     await ensureDatabase();
     const db = getDb();
     await db.insert(outlookConnections).values({
