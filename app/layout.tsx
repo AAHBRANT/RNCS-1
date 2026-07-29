@@ -10,7 +10,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "Controle de RNC",
     description: "Gestão de Relatórios de Não Conformidade, prazos, respostas e retornos.",
-    icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
+    icons: { icon: "/favicon-rnc.png", shortcut: "/favicon-rnc.png", apple: "/favicon-rnc.png" },
     openGraph: {
       title: "Controle de RNC",
       description: "Gestão de não conformidades",
