@@ -391,8 +391,10 @@ async function processMessage(
   const combined = `${subject}\n${body}\n${attachmentNames.join("\n")}\n${documentText}`;
   const workName = ONLY_WORK;
   let identities = extractIdentities(subject, attachmentNames, body);
+  let explicitSentTargets: Identity[] = [];
   if (officialSent) {
     const explicit = explicitSentIdentities(subject, body, attachmentNames);
+    explicitSentTargets = explicit;
     // When the current reply or its attachments identify one or more RNCs,
     // quoted subjects and historical thread text cannot expand that set.
     if (explicit.length) identities = explicit;
@@ -409,20 +411,9 @@ async function processMessage(
     conversationLinked = identities.length > 0;
     identities = [...new Map(identities.map((identity) => [`${identity.number}/${identity.year}`, identity])).values()];
   }
-  if (target) identities = identities.filter((item) => item.number === target.number && item.year === target.year);
-  if (!identities.length) return stats;
-
   const db = getDb();
-  const [work] = await db.select().from(works).where(eq(works.name, workName)).limit(1);
-  if (!work) return stats;
-  const occurredAt = message.sentDateTime || message.receivedDateTime || new Date().toISOString();
-  const occurredDate = dateOnly(occurredAt);
-  const isAnalysis = officialIncoming
-    && /encaminhamento de analise(?:s)? de tratativa(?:s)? do(?:s)? rnc/i.test(normalize(subject));
-  const eventType = officialSent ? "envio_resposta" : isAnalysis ? "retorno_supervisao" : "recebimento";
-
-  if (officialSent) {
-    const validKeys = new Set(identities.map((identity) => `${identity.number}/${identity.year}`));
+  if (officialSent && explicitSentTargets.length) {
+    const validKeys = new Set(explicitSentTargets.map((identity) => `${identity.number}/${identity.year}`));
     const previousLinks = await db.select().from(emailEvents)
       .where(eq(emailEvents.outlookMessageId, message.id));
     for (const previous of previousLinks) {
@@ -433,6 +424,16 @@ async function processMessage(
       }
     }
   }
+  if (target) identities = identities.filter((item) => item.number === target.number && item.year === target.year);
+  if (!identities.length) return stats;
+
+  const [work] = await db.select().from(works).where(eq(works.name, workName)).limit(1);
+  if (!work) return stats;
+  const occurredAt = message.sentDateTime || message.receivedDateTime || new Date().toISOString();
+  const occurredDate = dateOnly(occurredAt);
+  const isAnalysis = officialIncoming
+    && /encaminhamento de analise(?:s)? de tratativa(?:s)? do(?:s)? rnc/i.test(normalize(subject));
+  const eventType = officialSent ? "envio_resposta" : isAnalysis ? "retorno_supervisao" : "recebimento";
 
   for (const identity of identities) {
     if ((officialSent || isAnalysis) && !identityIsStrong(identity, subject, attachmentNames) && !conversationLinked) continue;
