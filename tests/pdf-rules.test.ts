@@ -3,7 +3,7 @@ import test from "node:test";
 import { extractRncInformation } from "../lib/pdf/extract-rnc-information";
 import { processRncAttachment } from "../lib/pdf/process-rnc-attachment";
 import { analysisStatusFromEmailBody } from "../lib/rnc-analysis";
-import { classifyType, explicitSentIdentities } from "../lib/outlook-sync";
+import { classifyType, explicitSentIdentities, isGraphSearchStaleError } from "../lib/outlook-sync";
 
 test("identifica número e ano da RNC", () => {
   assert.deepEqual(
@@ -212,4 +212,11 @@ test("identifica todas as RNCs declaradas no corpo atual mesmo com anexos fora d
 test("classifica falhas construtivas como execução", () => {
   assert.equal(classifyType("Não conformidades nas arquibancadas do campo de futebol"), "Execução");
   assert.equal(classifyType("Presença de infiltração em revestimento de gesso"), "Execução");
+});
+
+test("reconhece cursor de pesquisa invalidado pelo Microsoft Graph", () => {
+  assert.equal(isGraphSearchStaleError(new Error(
+    'Microsoft Graph respondeu 400: {"error":{"code":"ErrorExecuteSearchStaleData","message":"Please reissue the query with rowOffset = 0. The specified rowoffset is 10, but the results are stale."}}',
+  )), true);
+  assert.equal(isGraphSearchStaleError(new Error("Erro de autenticação")), false);
 });

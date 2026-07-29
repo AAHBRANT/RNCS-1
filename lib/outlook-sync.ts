@@ -164,6 +164,12 @@ async function graph<T>(accessToken: string, url: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export function isGraphSearchStaleError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return message.includes("ErrorExecuteSearchStaleData")
+    || /rowOffset\s*=\s*0[\s\S]*results are stale/i.test(message);
+}
+
 async function allPages<T>(accessToken: string, initialUrl: string) {
   const values: T[] = [];
   let url: string | undefined = initialUrl;
@@ -778,13 +784,18 @@ async function fullMailboxDossierScan(accessToken: string, target?: Identity, cu
   const search = encodeURIComponent(target
     ? `"${Number(target.number)}/${target.year}"`
     : `"participants:${OFFICIAL_EMAIL}"`);
-  const page = await graph<GraphPage<GraphMessage>>(
-    accessToken,
-    // A single message can contain several large PDFs. Keeping the serverless
-    // batch at one message prevents the platform from terminating the request
-    // before the continuation cursor can be returned to the browser.
-    cursor || `/me/messages?$search=${search}&$select=${select}&$top=1`,
-  );
+  // Search cursors are cache snapshots maintained by Microsoft Graph. When the
+  // mailbox changes between requests, Graph can invalidate a nextLink and ask
+  // the client to restart at rowOffset 0. Restart transparently with a fresh
+  // search key instead of exposing the technical Graph error to the user.
+  const initialUrl = `/me/messages?$search=${search}&$select=${select}&$top=1`;
+  let page: GraphPage<GraphMessage>;
+  try {
+    page = await graph<GraphPage<GraphMessage>>(accessToken, cursor || initialUrl);
+  } catch (error) {
+    if (!cursor || !isGraphSearchStaleError(error)) throw error;
+    page = await graph<GraphPage<GraphMessage>>(accessToken, initialUrl);
+  }
   const messages = page.value;
   messages.sort((a, b) =>
     String(a.sentDateTime || a.receivedDateTime).localeCompare(String(b.sentDateTime || b.receivedDateTime)));
