@@ -1,7 +1,7 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { ensureDatabase, getDb } from "../db";
 import {
-  emailEvents, outlookConnections, outlookSyncFolders, rncConflicts, rncs, syncRuns, works,
+  auditLog, emailEvents, outlookConnections, outlookSyncFolders, rncConflicts, rncs, syncRuns, works,
 } from "../db/schema";
 import { encryptToken, refreshAccessToken } from "./outlook-auth";
 
@@ -14,23 +14,25 @@ type GraphAttachment = {
 };
 type GraphMessage = {
   id: string; internetMessageId?: string; conversationId?: string; subject?: string;
+  parentFolderId?: string;
   bodyPreview?: string; body?: { content?: string; contentType?: string };
   receivedDateTime?: string; sentDateTime?: string; sender?: GraphAddress; from?: GraphAddress;
   toRecipients?: GraphAddress[]; ccRecipients?: GraphAddress[]; hasAttachments?: boolean;
+  internetMessageHeaders?: Array<{ name?: string; value?: string }>;
   "@removed"?: unknown;
 };
 type GraphPage<T> = { value: T[]; "@odata.nextLink"?: string; "@odata.deltaLink"?: string };
 type Identity = { number: string; year: number };
 type AttachmentInfo = { id: string; name: string; contentType: string; size: number; extractedText?: string };
+type Confidence = { score: number; reason: string };
+type SyncStats = {
+  messagesAnalyzed: number; newRncs: number; updatedRncs: number; ownersIdentified: number;
+  sentDatesCorrected: number; returnsProcessed: number; statusesUpdated: number; eventsImported: number;
+};
 
 const OFFICIAL_EMAIL = "contato@jampasustentavel.com";
-const ANALYSIS_PREFIX = "encaminhamento de analise de tratativa do rnc";
+const ONLY_WORK = "Parque Socioambiental do Roger – Fase II";
 const protectedStatuses = new Set(["Aprovada", "Reprovada", "Retorno recebido — status a confirmar"]);
-const workAliases = [
-  { name: "Parque do Roger - Fase II", aliases: ["parque do roger", "parque roger", "roger fase ii", "roger fase 2", "antigo lixao do roger"] },
-  { name: "Ponte Rio Cuiá", aliases: ["ponte rio cuiá", "ponte rio cuia", "rio cuiá", "rio cuia"] },
-  { name: "Compl. Beira Rio", aliases: ["compl. beira rio", "compl beira rio", "complementação beira rio", "complementacao beira rio", "beira rio"] },
-];
 
 function normalize(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -44,11 +46,6 @@ function stripHtml(value: string) {
 
 function address(value?: string) {
   return normalize(value || "").trim();
-}
-
-function identifyWork(text: string) {
-  const source = normalize(text);
-  return workAliases.find((work) => work.aliases.some((alias) => source.includes(normalize(alias))))?.name;
 }
 
 function extractIdentities(subject: string, attachmentNames: string[], body: string) {
@@ -205,22 +202,39 @@ async function attachmentsForMessage(accessToken: string, message: GraphMessage)
 function extractOwners(text: string) {
   const values = new Set<string>();
   for (const pattern of [
-    /respons[aá]vel\s+(?:pela\s+resposta|pela\s+tratativa|t[eé]cnico)?\s*[:\-]\s*([^\n\r;|]{3,100})/gi,
-    /elaborado\s+por\s*[:\-]\s*([^\n\r;|]{3,100})/gi,
+    /respons[aá]vel\s+(?:pela\s+resposta|pela\s+tratativa|pela\s+elabora[cç][aã]o|t[eé]cnico)?\s*[:\-]?\s*([^\n\r;|]{3,100})/gi,
+    /(?:elaborado|preenchido)\s+por\s*[:\-]?\s*([^\n\r;|]{3,100})/gi,
   ]) {
     for (const match of text.matchAll(pattern)) {
       const value = match[1].replace(/\s{2,}/g, " ").trim().replace(/[.,:;-]+$/, "");
-      if (value.length <= 100) values.add(value);
+      if (
+        value.length <= 100
+        && !/^(data|assinatura|empresa|cargo|fun[cç][aã]o|n[aã]o identificado)/i.test(value)
+      ) values.add(value);
     }
   }
   return [...values];
 }
 
-function analysisStatus(text: string) {
+function analysisStatus(documentText: string): { status: string; confidence: Confidence } {
+  if (!documentText.trim()) {
+    return {
+      status: "Retorno recebido — status a confirmar",
+      confidence: { score: 1, reason: "Documento de análise sem texto extraível; necessita conferência." },
+    };
+  }
+  const text = documentText;
   const source = normalize(text);
-  if (/nao aprovada|reprovada|nao atendida|tratativa nao aceita|necessita correcao|revisar|reenviar|pendencia permanece/.test(source)) return "Reprovada";
-  if (/tratativa aprovada|considerada atendida|sem pendencias|aprovada|atendida|sanada|encerrada/.test(source)) return "Aprovada";
-  return "Retorno recebido — status a confirmar";
+  if (/nao aprovada|reprovada|nao atendida|tratativa nao aceita|necessita correcao|revisar|reenviar|pendencia permanece/.test(source)) {
+    return { status: "Reprovada", confidence: { score: 5, reason: "Resultado identificado no documento anexo da análise." } };
+  }
+  if (/tratativa aprovada|considerada atendida|sem pendencias|aprovada|atendida|sanada|encerrada/.test(source)) {
+    return { status: "Aprovada", confidence: { score: 5, reason: "Resultado identificado no documento anexo da análise." } };
+  }
+  return {
+    status: "Retorno recebido — status a confirmar",
+    confidence: { score: 2, reason: "Documento analisado, mas sem resultado inequívoco." },
+  };
 }
 
 function parsedJson<T>(value: string | null | undefined, fallback: T): T {
@@ -237,16 +251,31 @@ async function recordConflict(rncId: number, field: string, values: string[]) {
   await getDb().insert(rncConflicts).values({ rncId, field, candidateValues: JSON.stringify(unique) });
 }
 
+function emptyStats(): SyncStats {
+  return {
+    messagesAnalyzed: 0, newRncs: 0, updatedRncs: 0, ownersIdentified: 0,
+    sentDatesCorrected: 0, returnsProcessed: 0, statusesUpdated: 0, eventsImported: 0,
+  };
+}
+
+function addStats(total: SyncStats, next: SyncStats) {
+  for (const key of Object.keys(total) as Array<keyof SyncStats>) total[key] += next[key];
+  return total;
+}
+
 async function processMessage(
-  accessToken: string, message: GraphMessage, folder: GraphFolder & { path: string }, kind: FolderKind, target?: Identity,
+  accessToken: string, message: GraphMessage, folder: GraphFolder & { path: string }, kind: FolderKind,
+  target?: Identity, reprocess = false,
 ) {
-  if (message["@removed"] || !message.id) return 0;
+  const stats = emptyStats();
+  if (message["@removed"] || !message.id) return stats;
   const sender = address(message.sender?.emailAddress?.address || message.from?.emailAddress?.address);
   const recipientsList = [...(message.toRecipients || []), ...(message.ccRecipients || [])]
     .map((item) => address(item.emailAddress?.address)).filter(Boolean);
   const officialIncoming = kind === "inbox" && sender === OFFICIAL_EMAIL;
   const officialSent = kind === "sent" && recipientsList.includes(OFFICIAL_EMAIL);
-  if (!officialIncoming && !officialSent) return 0;
+  if (!officialIncoming && !officialSent) return stats;
+  stats.messagesAnalyzed = 1;
 
   const attachments = await attachmentsForMessage(accessToken, message);
   const subject = message.subject || "";
@@ -254,23 +283,34 @@ async function processMessage(
   const attachmentNames = attachments.map((item) => item.name);
   const documentText = attachments.map((item) => item.extractedText || "").join("\n");
   const combined = `${subject}\n${body}\n${attachmentNames.join("\n")}\n${documentText}`;
-  const workName = identifyWork(combined);
-  if (!workName) return 0;
+  const workName = ONLY_WORK;
   let identities = extractIdentities(subject, attachmentNames, body);
+  let conversationLinked = false;
+  if (!identities.length && message.conversationId) {
+    const linkedEvents = await getDb().select({ rncId: emailEvents.rncId }).from(emailEvents)
+      .where(eq(emailEvents.conversationId, message.conversationId));
+    for (const linked of linkedEvents) {
+      const [linkedRnc] = await getDb().select({ number: rncs.number, year: rncs.year }).from(rncs)
+        .where(eq(rncs.id, linked.rncId)).limit(1);
+      if (linkedRnc) identities.push(linkedRnc);
+    }
+    conversationLinked = identities.length > 0;
+    identities = [...new Map(identities.map((identity) => [`${identity.number}/${identity.year}`, identity])).values()];
+  }
   if (target) identities = identities.filter((item) => item.number === target.number && item.year === target.year);
-  if (!identities.length) return 0;
+  if (!identities.length) return stats;
 
   const db = getDb();
   const [work] = await db.select().from(works).where(eq(works.name, workName)).limit(1);
-  if (!work) return 0;
+  if (!work) return stats;
   const occurredAt = message.sentDateTime || message.receivedDateTime || new Date().toISOString();
   const occurredDate = dateOnly(occurredAt);
-  const isAnalysis = officialIncoming && normalize(subject).trim().startsWith(ANALYSIS_PREFIX);
+  const isAnalysis = officialIncoming
+    && /^encaminhamento de analise(?:s)? de tratativa(?:s)? do(?:s)? rnc/i.test(normalize(subject).trim());
   const eventType = officialSent ? "envio_resposta" : isAnalysis ? "retorno_supervisao" : "recebimento";
-  let imported = 0;
 
   for (const identity of identities) {
-    if ((officialSent || isAnalysis) && !identityIsStrong(identity, subject, attachmentNames)) continue;
+    if ((officialSent || isAnalysis) && !identityIsStrong(identity, subject, attachmentNames) && !conversationLinked) continue;
     let [rnc] = await db.select().from(rncs).where(and(
       eq(rncs.workId, work.id), eq(rncs.number, identity.number), eq(rncs.year, identity.year),
     )).limit(1);
@@ -291,25 +331,38 @@ async function processMessage(
           type: "Identificado no documento", receivedAt: "Identificado no e-mail recebido",
           responseOwner: owners.length === 1 ? "Extraído do documento" : "Não identificado",
         }),
+        fieldConfidence: JSON.stringify({
+          receivedAt: { score: 5, reason: "Data da mensagem oficial recebida da Supervisão." },
+          description: { score: description ? 5 : 1, reason: description ? "Descrição extraída do nome do documento original." : "Descrição não localizada." },
+          type: { score: description ? 4 : 1, reason: "Classificação baseada no documento original." },
+          responseOwner: { score: owners.length === 1 ? 5 : 1, reason: owners.length === 1 ? "Nome extraído do documento original da RNC." : "Responsável não localizado no documento." },
+        }),
         sourceSummary: `Mensagem oficial recebida em ${occurredAt}`,
       }).returning();
+      stats.newRncs++;
+      if (owners.length === 1) stats.ownersIdentified++;
       await recordConflict(rnc.id, "responseOwner", owners);
     } else {
       const [alreadyImported] = await db.select({ id: emailEvents.id }).from(emailEvents)
         .where(and(eq(emailEvents.rncId, rnc.id), eq(emailEvents.outlookMessageId, message.id))).limit(1);
-      if (alreadyImported) continue;
+      if (alreadyImported && !reprocess) continue;
       const changes: Partial<typeof rncs.$inferInsert> = {};
       const sources = parsedJson<Record<string, string>>(rnc.fieldSources, {});
+      const confidence = parsedJson<Record<string, Confidence>>(rnc.fieldConfidence, {});
       if (eventType === "recebimento") {
         if (canAutoUpdate(rnc, "receivedAt") && (!rnc.receivedAt || occurredDate < rnc.receivedAt)) {
           changes.receivedAt = occurredDate; changes.dueAt = addBusinessDays(occurredDate);
           sources.receivedAt = "Identificado no e-mail recebido";
+          confidence.receivedAt = { score: 5, reason: "Data da mensagem oficial recebida da Supervisão." };
         }
         if (description && canAutoUpdate(rnc, "description")) {
           changes.description = description; sources.description = "Identificado no documento";
+          confidence.description = { score: 5, reason: "Descrição extraída do nome do documento original." };
         }
         if (owners.length === 1 && canAutoUpdate(rnc, "responseOwner")) {
           changes.responseOwner = owners[0]; sources.responseOwner = "Extraído do documento";
+          confidence.responseOwner = { score: 5, reason: "Nome extraído do documento original da RNC." };
+          stats.ownersIdentified++;
         } else if (owners.length > 1) {
           await recordConflict(rnc.id, "responseOwner", owners);
           if (canAutoUpdate(rnc, "responseOwner")) changes.responseOwner = "Não identificado";
@@ -317,34 +370,46 @@ async function processMessage(
       } else if (eventType === "envio_resposta") {
         if (canAutoUpdate(rnc, "sentAt") && (!rnc.sentAt || occurredDate < rnc.sentAt)) {
           changes.sentAt = occurredDate; sources.sentAt = "Identificado nos Itens Enviados";
+          confidence.sentAt = { score: 5, reason: `Primeiro envio oficial para ${OFFICIAL_EMAIL}.` };
+          stats.sentDatesCorrected++;
         }
         if (!protectedStatuses.has(rnc.status) && canAutoUpdate(rnc, "status")) {
           changes.status = "Respondida"; sources.status = "Identificado nos Itens Enviados";
         }
       } else {
+        stats.returnsProcessed++;
         if (canAutoUpdate(rnc, "returnedAt") && (!rnc.returnedAt || occurredDate >= rnc.returnedAt)) {
           changes.returnedAt = occurredDate; sources.returnedAt = "Identificado no e-mail recebido";
+          confidence.returnedAt = { score: 5, reason: "Data do e-mail oficial de retorno da Supervisão." };
         }
         if (canAutoUpdate(rnc, "status")) {
-          changes.status = analysisStatus(`${body}\n${documentText}`); sources.status = "Extraído do documento de análise";
+          const result = analysisStatus(documentText);
+          changes.status = result.status; sources.status = "Extraído do documento de análise";
+          confidence.status = result.confidence;
+          stats.statusesUpdated++;
         }
       }
       if (Object.keys(changes).length) {
         changes.fieldSources = JSON.stringify(sources);
+        changes.fieldConfidence = JSON.stringify(confidence);
         changes.updatedAt = new Date().toISOString();
         await db.update(rncs).set(changes).where(eq(rncs.id, rnc.id));
+        stats.updatedRncs++;
       }
     }
 
     await db.insert(emailEvents).values({
       rncId: rnc.id, outlookMessageId: message.id, internetMessageId: message.internetMessageId,
       conversationId: message.conversationId, folderName: folder.path, eventType, sender,
+      inReplyTo: message.internetMessageHeaders?.find((header) => normalize(header.name || "") === "in-reply-to")?.value,
+      references: message.internetMessageHeaders?.find((header) => normalize(header.name || "") === "references")?.value,
+      associationConfidence: identityIsStrong(identity, subject, attachmentNames) ? 5 : conversationLinked ? 4 : 3,
       recipients: recipientsList.join(", "), subject, summary: body.slice(0, 2000), occurredAt,
       attachmentMetadata: JSON.stringify(attachments.map(({ extractedText: _, ...item }) => item)),
     }).onConflictDoNothing();
-    imported++;
+    stats.eventsImported++;
   }
-  return imported;
+  return stats;
 }
 
 async function syncFolder(
@@ -360,17 +425,17 @@ async function syncFolder(
   // stored at the end of the pass handles every subsequent message.
   const days = Math.max(1, Math.min(120, Number(process.env.OUTLOOK_INITIAL_SYNC_DAYS || 120)));
   const since = new Date(Date.now() - days * 86400000).toISOString();
-  const select = "id,internetMessageId,conversationId,subject,bodyPreview,body,receivedDateTime,sentDateTime,sender,from,toRecipients,ccRecipients,hasAttachments";
+  const select = "id,internetMessageId,conversationId,parentFolderId,subject,bodyPreview,body,receivedDateTime,sentDateTime,sender,from,toRecipients,ccRecipients,hasAttachments,internetMessageHeaders";
   let url = !force && state?.deltaLink
     ? state.deltaLink
     : `/me/mailFolders/${encodeURIComponent(folder.id)}/messages/delta?$select=${select}&$filter=receivedDateTime ge ${since}`;
-  let imported = 0;
+  const stats = emptyStats();
   let deltaLink: string | undefined;
   do {
     const page: GraphPage<GraphMessage> = await graph(accessToken, url);
     const ordered = page.value.sort((a, b) =>
       String(a.sentDateTime || a.receivedDateTime).localeCompare(String(b.sentDateTime || b.receivedDateTime)));
-    for (const message of ordered) imported += await processMessage(accessToken, message, folder, kind, target);
+    for (const message of ordered) addStats(stats, await processMessage(accessToken, message, folder, kind, target));
     url = page["@odata.nextLink"] || "";
     deltaLink = page["@odata.deltaLink"] || deltaLink;
   } while (url);
@@ -380,12 +445,122 @@ async function syncFolder(
     target: [outlookSyncFolders.connectionId, outlookSyncFolders.folderId],
     set: { folderName: folder.path, folderKind: kind, deltaLink, updatedAt: new Date().toISOString() },
   });
-  return imported;
+  return stats;
+}
+
+async function protectOnlyRealManualCorrections() {
+  const db = getDb();
+  const [records, manualChanges] = await Promise.all([
+    db.select().from(rncs),
+    db.select({ rncId: auditLog.rncId, field: auditLog.field }).from(auditLog).where(ne(auditLog.field, "registro")),
+  ]);
+  const corrected = new Map<number, Set<string>>();
+  for (const change of manualChanges) {
+    const fields = corrected.get(change.rncId) || new Set<string>();
+    fields.add(change.field);
+    corrected.set(change.rncId, fields);
+  }
+  for (const record of records) {
+    const wasAuditedOutlookImport = normalize(record.sourceSummary).includes("importado apos conferencia");
+    const protectedFields = wasAuditedOutlookImport
+      ? new Set<string>(parsedJson<string[]>(record.manualFields, []))
+      : corrected.get(record.id) || new Set<string>();
+    if (record.notes) protectedFields.add("notes");
+    const next = JSON.stringify([...protectedFields]);
+    if (next !== record.manualFields) {
+      await db.update(rncs).set({ manualFields: next }).where(eq(rncs.id, record.id));
+    }
+  }
+}
+
+async function fullMailboxDossierScan(accessToken: string, target?: Identity) {
+  const folders = await discoverFolders(accessToken);
+  const byId = new Map(folders.map((folder) => [folder.id, folder]));
+  const select = "id,internetMessageId,conversationId,parentFolderId,subject,bodyPreview,body,receivedDateTime,sentDateTime,sender,from,toRecipients,ccRecipients,hasAttachments,internetMessageHeaders";
+  const search = encodeURIComponent(`"participants:${OFFICIAL_EMAIL}"`);
+  const messages = await allPages<GraphMessage>(
+    accessToken,
+    `/me/messages?$search=${search}&$select=${select}&$top=100`,
+  );
+  messages.sort((a, b) =>
+    String(a.sentDateTime || a.receivedDateTime).localeCompare(String(b.sentDateTime || b.receivedDateTime)));
+  const stats = emptyStats();
+  for (const message of messages) {
+    const recipients = [...(message.toRecipients || []), ...(message.ccRecipients || [])]
+      .map((item) => address(item.emailAddress?.address));
+    const kind: FolderKind = recipients.includes(OFFICIAL_EMAIL) ? "sent" : "inbox";
+    const knownFolder = message.parentFolderId ? byId.get(message.parentFolderId) : undefined;
+    const folder = knownFolder || {
+      id: message.parentFolderId || "search",
+      displayName: "Pesquisa geral do Outlook",
+      path: "Pesquisa geral do Outlook",
+      kind,
+    };
+    addStats(stats, await processMessage(accessToken, message, folder, kind, target, true));
+  }
+  return { folders, stats };
+}
+
+async function reconcileDossiers(stats: SyncStats, target?: Identity) {
+  const db = getDb();
+  const records = await db.select().from(rncs);
+  for (const record of records) {
+    if (target && (record.number !== target.number || record.year !== target.year)) continue;
+    const events = await db.select().from(emailEvents).where(eq(emailEvents.rncId, record.id));
+    const dates = (eventType: string) => events.filter((event) => event.eventType === eventType)
+      .map((event) => event.occurredAt.slice(0, 10)).sort();
+    const receivedDates = dates("recebimento");
+    const sentDates = dates("envio_resposta");
+    const returnDates = dates("retorno_supervisao");
+    const changes: Partial<typeof rncs.$inferInsert> = {};
+    const sources = parsedJson<Record<string, string>>(record.fieldSources, {});
+    const confidence = parsedJson<Record<string, Confidence>>(record.fieldConfidence, {});
+    if (canAutoUpdate(record, "receivedAt") && receivedDates[0] && record.receivedAt !== receivedDates[0]) {
+      changes.receivedAt = receivedDates[0];
+      changes.dueAt = addBusinessDays(receivedDates[0]);
+      sources.receivedAt = "Identificado no e-mail oficial recebido";
+      confidence.receivedAt = { score: 5, reason: "Primeiro recebimento oficial localizado no dossiê." };
+    }
+    const officialSentAt = sentDates[0] || null;
+    if (canAutoUpdate(record, "sentAt") && record.sentAt !== officialSentAt) {
+      changes.sentAt = officialSentAt;
+      sources.sentAt = officialSentAt ? "Identificado nos Itens Enviados" : "Não identificado";
+      confidence.sentAt = officialSentAt
+        ? { score: 5, reason: `Primeiro envio oficial para ${OFFICIAL_EMAIL}.` }
+        : { score: 1, reason: "Nenhum envio oficial para a Supervisão foi localizado." };
+      stats.sentDatesCorrected++;
+    }
+    const officialReturnAt = returnDates.at(-1) || null;
+    if (canAutoUpdate(record, "returnedAt") && record.returnedAt !== officialReturnAt) {
+      changes.returnedAt = officialReturnAt;
+      sources.returnedAt = officialReturnAt ? "Identificado no e-mail de análise" : "Não identificado";
+      confidence.returnedAt = officialReturnAt
+        ? { score: 5, reason: "Último retorno oficial localizado no dossiê." }
+        : { score: 1, reason: "Nenhum retorno oficial localizado." };
+    }
+    if (!returnDates.length && canAutoUpdate(record, "status")) {
+      const nextStatus = officialSentAt ? "Respondida" : "Recebida";
+      if (record.status !== nextStatus) {
+        changes.status = nextStatus;
+        sources.status = officialSentAt ? "Identificado nos Itens Enviados" : "Identificado no e-mail recebido";
+        confidence.status = { score: 5, reason: officialSentAt ? "Existe envio oficial e não há retorno da análise." : "Existe recebimento oficial e não há envio oficial." };
+        stats.statusesUpdated++;
+      }
+    }
+    if (Object.keys(changes).length) {
+      changes.fieldSources = JSON.stringify(sources);
+      changes.fieldConfidence = JSON.stringify(confidence);
+      changes.updatedAt = new Date().toISOString();
+      await db.update(rncs).set(changes).where(eq(rncs.id, record.id));
+      stats.updatedRncs++;
+    }
+  }
 }
 
 export async function synchronizeOutlook(options: { force?: boolean; targetRncId?: number } = {}) {
   await ensureDatabase();
   const db = getDb();
+  await protectOnlyRealManualCorrections();
   const [connection] = await db.select().from(outlookConnections).limit(1);
   if (!connection) throw new Error("Conecte primeiro a conta do Outlook.");
   if (!options.force && connection.lastSyncAt && Date.now() - new Date(connection.lastSyncAt).getTime() < 60_000) {
@@ -404,22 +579,39 @@ export async function synchronizeOutlook(options: { force?: boolean; targetRncId
   }
   const [run] = await db.insert(syncRuns).values({ connectionId: connection.id }).returning();
   try {
-    const folders = await discoverFolders(token.access_token!);
-    let imported = 0;
-    for (const folder of folders) {
-      imported += await syncFolder(token.access_token!, connection.id, folder, folder.kind, Boolean(options.force), target);
+    let folders: Array<GraphFolder & { path: string; kind: FolderKind }>;
+    const stats = emptyStats();
+    if (options.force) {
+      const dossier = await fullMailboxDossierScan(token.access_token!, target);
+      folders = dossier.folders;
+      addStats(stats, dossier.stats);
+      await reconcileDossiers(stats, target);
+    } else {
+      folders = await discoverFolders(token.access_token!);
+      for (const folder of folders) {
+        addStats(stats, await syncFolder(token.access_token!, connection.id, folder, folder.kind, false, target));
+      }
     }
-    const message = `${imported} evento(s) oficial(is) importado(s) em ${folders.length} pasta(s).`;
+    const message = [
+      `${stats.messagesAnalyzed} novas mensagens analisadas`,
+      `${stats.newRncs} novas RNC encontradas`,
+      `${stats.updatedRncs} RNC atualizadas`,
+      `${stats.ownersIdentified} responsáveis identificados`,
+      `${stats.sentDatesCorrected} datas de envio corrigidas`,
+      `${stats.returnsProcessed} retornos processados`,
+      `${stats.statusesUpdated} status atualizados`,
+      "Sincronização concluída.",
+    ].join(" · ");
     const finishedAt = new Date().toISOString();
     await Promise.all([
       db.update(outlookConnections).set({ lastSyncAt: finishedAt, lastSyncStatus: "success", lastSyncMessage: message })
         .where(eq(outlookConnections.id, connection.id)),
       db.update(syncRuns).set({
         finishedAt, status: "success", foldersChecked: JSON.stringify(folders.map((folder) => folder.path)),
-        importedCount: imported, message,
+        importedCount: stats.eventsImported, message,
       }).where(eq(syncRuns.id, run.id)),
     ]);
-    return { imported, folders: folders.length, foldersChecked: folders.map((folder) => folder.path), message };
+    return { ...stats, folders: folders.length, foldersChecked: folders.map((folder) => folder.path), message };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Falha na sincronização.";
     const finishedAt = new Date().toISOString();

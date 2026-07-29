@@ -1,5 +1,16 @@
 # Controle de RNC
 
+## Versão 2
+
+- aplicação exclusiva da obra **Parque Socioambiental do Roger – Fase II**;
+- sincronização oficial restrita às mensagens recebidas de ou enviadas para `contato@jampasustentavel.com`;
+- dossiê por RNC usando número, ano, anexos, `Conversation ID`, `Message-ID`, `In-Reply-To` e `References`;
+- responsável extraído do documento original, sem usar o remetente;
+- resultado da análise extraído prioritariamente do documento anexo;
+- reprocessamento das RNCs existentes com preservação das correções manuais;
+- confiança e origem de cada informação disponíveis na tela de detalhes;
+- cards do dashboard utilizáveis como filtros.
+
 Aplicação web para controlar Relatórios de Não Conformidade por obra, número e ano, com sincronização de uma conta individual do Outlook pela Microsoft Graph.
 
 ## Funcionalidades

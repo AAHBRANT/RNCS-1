@@ -65,6 +65,7 @@ async function initializeDatabaseOnce() {
     response_owner TEXT NOT NULL DEFAULT '',
     analysis_owner TEXT NOT NULL DEFAULT '',
     field_sources TEXT NOT NULL DEFAULT '{}',
+    field_confidence TEXT NOT NULL DEFAULT '{}',
     manual_fields TEXT NOT NULL DEFAULT '[]',
     source_summary TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -72,6 +73,7 @@ async function initializeDatabaseOnce() {
     CONSTRAINT rncs_work_number_year_unique UNIQUE(work_id, number, year)
   )`;
   await sql`ALTER TABLE rncs ADD COLUMN IF NOT EXISTS field_sources TEXT NOT NULL DEFAULT '{}'`;
+  await sql`ALTER TABLE rncs ADD COLUMN IF NOT EXISTS field_confidence TEXT NOT NULL DEFAULT '{}'`;
   await sql`ALTER TABLE rncs ADD COLUMN IF NOT EXISTS manual_fields TEXT NOT NULL DEFAULT '[]'`;
   await sql`ALTER TABLE rncs ADD COLUMN IF NOT EXISTS source_summary TEXT NOT NULL DEFAULT ''`;
   await sql`ALTER TABLE rncs ALTER COLUMN received_at DROP NOT NULL`;
@@ -84,6 +86,9 @@ async function initializeDatabaseOnce() {
     outlook_message_id TEXT NOT NULL,
     internet_message_id TEXT,
     conversation_id TEXT,
+    in_reply_to TEXT,
+    "references" TEXT,
+    association_confidence INTEGER NOT NULL DEFAULT 0,
     folder_name TEXT,
     event_type TEXT NOT NULL,
     sender TEXT,
@@ -96,6 +101,9 @@ async function initializeDatabaseOnce() {
   )`;
   await sql`ALTER TABLE email_events ADD COLUMN IF NOT EXISTS internet_message_id TEXT`;
   await sql`ALTER TABLE email_events ADD COLUMN IF NOT EXISTS conversation_id TEXT`;
+  await sql`ALTER TABLE email_events ADD COLUMN IF NOT EXISTS in_reply_to TEXT`;
+  await sql`ALTER TABLE email_events ADD COLUMN IF NOT EXISTS "references" TEXT`;
+  await sql`ALTER TABLE email_events ADD COLUMN IF NOT EXISTS association_confidence INTEGER NOT NULL DEFAULT 0`;
   await sql`ALTER TABLE email_events ADD COLUMN IF NOT EXISTS folder_name TEXT`;
   await sql`ALTER TABLE email_events DROP CONSTRAINT IF EXISTS email_events_outlook_message_id_key`;
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS email_events_rnc_message_unique ON email_events(rnc_id, outlook_message_id)`;
@@ -152,4 +160,29 @@ async function initializeDatabaseOnce() {
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     resolved_at TIMESTAMPTZ
   )`;
+  await sql`INSERT INTO works (name, active)
+    VALUES ('Parque Socioambiental do Roger – Fase II', TRUE)
+    ON CONFLICT (name) DO UPDATE SET active = TRUE`;
+  await sql`UPDATE rncs
+    SET work_id = (SELECT id FROM works WHERE name = 'Parque Socioambiental do Roger – Fase II')
+    WHERE work_id IN (
+      SELECT id FROM works
+      WHERE name IN ('Parque do Roger - Fase II', 'Parque Socioambiental do Roger')
+    )`;
+  await sql`DELETE FROM rnc_conflicts WHERE rnc_id IN (
+    SELECT r.id FROM rncs r JOIN works w ON w.id = r.work_id
+    WHERE w.name <> 'Parque Socioambiental do Roger – Fase II'
+  )`;
+  await sql`DELETE FROM email_events WHERE rnc_id IN (
+    SELECT r.id FROM rncs r JOIN works w ON w.id = r.work_id
+    WHERE w.name <> 'Parque Socioambiental do Roger – Fase II'
+  )`;
+  await sql`DELETE FROM audit_log WHERE rnc_id IN (
+    SELECT r.id FROM rncs r JOIN works w ON w.id = r.work_id
+    WHERE w.name <> 'Parque Socioambiental do Roger – Fase II'
+  )`;
+  await sql`DELETE FROM rncs WHERE work_id IN (
+    SELECT id FROM works WHERE name <> 'Parque Socioambiental do Roger – Fase II'
+  )`;
+  await sql`DELETE FROM works WHERE name <> 'Parque Socioambiental do Roger – Fase II'`;
 }

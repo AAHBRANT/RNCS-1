@@ -9,10 +9,10 @@ type Rnc = {
   description: string; type: string; receivedAt: string | null; dueAt: string | null;
   sentAt: string | null; returnedAt: string | null; status: string; notes: string;
   responseOwner: string; analysisOwner: string; updatedAt: string;
-  fieldSources: string; manualFields: string; sourceSummary: string;
+  fieldSources: string; fieldConfidence: string; manualFields: string; sourceSummary: string;
 };
 type Audit = { id: number; field: string; oldValue: string | null; newValue: string | null; changedAt: string; userName: string };
-type EmailEvent = { id: number; eventType: string; sender: string | null; recipients: string | null; subject: string | null; summary: string | null; occurredAt: string; folderName: string | null; attachmentMetadata: string | null };
+type EmailEvent = { id: number; eventType: string; sender: string | null; recipients: string | null; subject: string | null; summary: string | null; occurredAt: string; folderName: string | null; attachmentMetadata: string | null; conversationId?: string | null; internetMessageId?: string | null; inReplyTo?: string | null; references?: string | null; associationConfidence?: number };
 type Conflict = { id: number; field: string; candidateValues: string; status: string };
 type OutlookStatus = {
   configured: boolean;
@@ -99,11 +99,11 @@ function urgency(rnc: Rnc) {
 export function RncApp() {
   const [works, setWorks] = useState<Work[]>([]);
   const [rows, setRows] = useState<Rnc[]>([]);
-  const [selectedWork, setSelectedWork] = useState("all");
   const [status, setStatus] = useState("all");
   const [type, setType] = useState("all");
   const [year, setYear] = useState("all");
   const [search, setSearch] = useState("");
+  const [cardFilter, setCardFilter] = useState("all");
   const [busy, setBusy] = useState(true);
   const [notice, setNotice] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -194,12 +194,25 @@ export function RncApp() {
 
   const filtered = useMemo(() => rows.filter((r) => {
     const term = search.toLocaleLowerCase("pt-BR");
-    return (selectedWork === "all" || String(r.workId) === selectedWork)
-      && (status === "all" || r.status === status)
+    const deadline = deadlineResult(r).delta;
+    const cardMatches = cardFilter === "all"
+      || (cardFilter === "received" && (r.status === "Recebida" || r.status === "Em elaboração"))
+      || (cardFilter === "answered" && r.status === "Respondida")
+      || (cardFilter === "approved" && r.status === "Aprovada")
+      || (cardFilter === "rejected" && r.status === "Reprovada")
+      || (cardFilter === "reopened" && r.status === "Reaberta")
+      || (cardFilter === "onTime" && deadline !== null && deadline <= 0)
+      || (cardFilter === "overdue" && !hasBeenAnswered(r) && (deadline ?? 0) > 0)
+      || (cardFilter === "answeredLate" && !!r.sentAt && (deadline ?? 0) > 0);
+    return cardMatches && (status === "all" || r.status === status)
       && (type === "all" || r.type === type)
       && (year === "all" || String(r.year) === year)
       && (!term || `${r.number} ${r.description} ${r.notes} ${r.responseOwner}`.toLocaleLowerCase("pt-BR").includes(term));
-  }), [rows, selectedWork, status, type, year, search]);
+  }), [rows, status, type, year, search, cardFilter]);
+
+  function clearFilters() {
+    setStatus("all"); setType("all"); setYear("all"); setSearch(""); setCardFilter("all");
+  }
 
   const stats = useMemo(() => ({
     total: rows.length,
@@ -314,21 +327,21 @@ export function RncApp() {
 
       <section className="metrics">
         {[
-          ["Total de RNC", stats.total, "neutral"], ["Recebidas", stats.received, "amber"],
-          ["Respondidas", stats.answered, "blue"], ["Aprovadas", stats.approved, "green"],
-          ["Reprovadas", stats.rejected, "red"], ["Reabertas", stats.reopened, "violet"],
-          ["Dentro do prazo", stats.onTime, "teal"], ["Vencidas", stats.overdue, "red"],
-          ["Respondidas com atraso", stats.answeredLate, "orange"],
-        ].map(([label, value, tone]) => <article key={String(label)} className={`metric ${tone}`}><span>{label}</span><strong>{value}</strong><div className="metric-line" /></article>)}
+          ["Total de RNC", stats.total, "neutral", "all"], ["Recebidas", stats.received, "amber", "received"],
+          ["Respondidas", stats.answered, "blue", "answered"], ["Aprovadas", stats.approved, "green", "approved"],
+          ["Reprovadas", stats.rejected, "red", "rejected"], ["Reabertas", stats.reopened, "violet", "reopened"],
+          ["Dentro do prazo", stats.onTime, "teal", "onTime"], ["Vencidas", stats.overdue, "red", "overdue"],
+          ["Respondidas com atraso", stats.answeredLate, "orange", "answeredLate"],
+        ].map(([label, value, tone, filter]) => <button type="button" key={String(label)} aria-pressed={cardFilter === filter} onClick={() => setCardFilter((current) => current === filter ? "all" : String(filter))} className={`metric ${tone} ${cardFilter === filter ? "active" : ""}`}><span>{label}</span><strong>{value}</strong><div className="metric-line" /></button>)}
       </section>
 
       <section className="workspace">
         <div className="filters">
           <label className="search"><span>⌕</span><input aria-label="Pesquisar RNC" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Pesquisar número, descrição ou texto…" /></label>
-          <select aria-label="Filtrar por obra" value={selectedWork} onChange={(e) => setSelectedWork(e.target.value)}><option value="all">Todas as obras</option>{works.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
           <select aria-label="Filtrar por status" value={status} onChange={(e) => setStatus(e.target.value)}><option value="all">Todos os status</option>{statusOptions.map((s) => <option key={s}>{s}</option>)}</select>
           <select aria-label="Filtrar por tipo" value={type} onChange={(e) => setType(e.target.value)}><option value="all">Todos os tipos</option>{typeOptions.map((t) => <option key={t}>{t}</option>)}</select>
           <select aria-label="Filtrar por ano" value={year} onChange={(e) => setYear(e.target.value)}><option value="all">Todos os anos</option>{years.map((y) => <option key={y}>{y}</option>)}</select>
+          <button className="button clear-filters" type="button" onClick={clearFilters}>Limpar filtros</button>
         </div>
         <div className="table-meta"><strong>{filtered.length} registros</strong><span>Atualização local: {updatedLabel}</span></div>
         <div className="table-scroll">
@@ -357,10 +370,10 @@ export function RncApp() {
         <div className="drawer-body">
           <span className={`status status-${selected.status.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replaceAll(" ", "-")}`}>{selected.status}</span>
           <h3>{selected.description}</h3>
-          <dl><div><dt>Tipo</dt><dd>{selected.type}</dd><small>{sourceFor(selected, "type")}</small></div><div><dt>Recebimento</dt><dd>{fmt(selected.receivedAt)}</dd><small>{sourceFor(selected, "receivedAt")}</small></div><div><dt>Prazo</dt><dd>{fmt(selected.dueAt)}</dd></div><div><dt>Envio</dt><dd>{fmt(selected.sentAt)}</dd><small>{sourceFor(selected, "sentAt")}</small></div><div><dt>Retorno</dt><dd>{fmt(selected.returnedAt)}</dd><small>{sourceFor(selected, "returnedAt")}</small></div><div><dt>Resp. pela resposta</dt><dd>{selected.responseOwner || "Não identificado"}</dd><small>{sourceFor(selected, "responseOwner")}</small></div><div><dt>Resp. pela análise</dt><dd>{selected.analysisOwner || "Não identificado"}</dd></div></dl>
+          <dl><div><dt>Tipo</dt><dd>{selected.type}</dd><small>{sourceFor(selected, "type")}</small><small className="confidence">{confidenceFor(selected, "type")}</small></div><div><dt>Recebimento</dt><dd>{fmt(selected.receivedAt)}</dd><small>{sourceFor(selected, "receivedAt")}</small><small className="confidence">{confidenceFor(selected, "receivedAt")}</small></div><div><dt>Prazo</dt><dd>{fmt(selected.dueAt)}</dd></div><div><dt>Envio</dt><dd>{fmt(selected.sentAt)}</dd><small>{sourceFor(selected, "sentAt")}</small><small className="confidence">{confidenceFor(selected, "sentAt")}</small></div><div><dt>Retorno</dt><dd>{fmt(selected.returnedAt)}</dd><small>{sourceFor(selected, "returnedAt")}</small><small className="confidence">{confidenceFor(selected, "returnedAt")}</small></div><div><dt>Status</dt><dd>{selected.status}</dd><small>{sourceFor(selected, "status")}</small><small className="confidence">{confidenceFor(selected, "status")}</small></div><div><dt>Resp. pela resposta</dt><dd>{selected.responseOwner || "Não identificado"}</dd><small>{sourceFor(selected, "responseOwner")}</small><small className="confidence">{confidenceFor(selected, "responseOwner")}</small></div><div><dt>Resp. pela análise</dt><dd>{selected.analysisOwner || "Não identificado"}</dd></div></dl>
           {conflicts.some((item) => item.status === "open") && <section className="conflict"><strong>Informações divergentes encontradas</strong><p>Revise os dados candidatos e selecione manualmente o valor correto.</p>{conflicts.filter((item) => item.status === "open").map((item) => <small key={item.id}>{item.field}: {JSON.parse(item.candidateValues).join(" · ")}</small>)}</section>}
           <section className="notes"><h4>Observações internas</h4><p>{selected.notes || "Nenhuma observação registrada."}</p></section>
-          <section className="timeline"><h4>Histórico oficial de e-mails</h4>{emails.length ? emails.map((event) => <div className="timeline-item" key={`email-${event.id}`}><i /><div><strong>{event.eventType.replaceAll("_", " ")}</strong><p>{event.subject}</p><small>{fmt(event.occurredAt)} · {event.folderName || "Outlook"}</small></div></div>) : <p className="muted">Nenhum e-mail oficial vinculado.</p>}</section>
+          <section className="timeline"><h4>Dossiê e histórico oficial de e-mails</h4>{emails.length ? emails.map((event) => <div className="timeline-item" key={`email-${event.id}`}><i /><div><strong>{event.eventType.replaceAll("_", " ")}</strong><p>{event.subject}</p><small>{fmt(event.occurredAt)} · {event.folderName || "Outlook"}</small><small>Vínculo {"★".repeat(event.associationConfidence || 0)}{"☆".repeat(5 - (event.associationConfidence || 0))}{event.conversationId ? " · Conversation ID confirmado" : ""}</small></div></div>) : <p className="muted">Nenhum e-mail oficial vinculado.</p>}</section>
           <section className="timeline"><h4>Histórico de alterações</h4>{history.length ? history.map((h) => <div className="timeline-item" key={h.id}><i /><div><strong>{labelByField[h.field] || h.field}</strong><p>{h.oldValue ? `${h.oldValue} → ` : ""}{h.newValue}</p><small>{fmt(h.changedAt)} · {h.userName}</small></div></div>) : <p className="muted">Nenhuma alteração manual adicional.</p>}</section>
         </div>
         <div className="drawer-footer split"><button className="button secondary" onClick={() => reprocessRnc(selected)} disabled={syncing}>Reprocessar RNC</button><button className="button primary" onClick={() => setEditing(selected)}>Editar RNC</button></div>
@@ -383,14 +396,26 @@ function sourceFor(rnc: Rnc, field: string) {
   catch { return "Origem não registrada"; }
 }
 
+function confidenceFor(rnc: Rnc, field: string) {
+  try {
+    const item = (JSON.parse(rnc.fieldConfidence || "{}") as Record<string, { score?: number; reason?: string }>)[field];
+    if (!item) return "☆☆☆☆☆ · Confiança ainda não calculada";
+    const score = Math.max(0, Math.min(5, Number(item.score || 0)));
+    return `${"★".repeat(score)}${"☆".repeat(5 - score)} · ${item.reason || "Sem justificativa registrada"}`;
+  } catch {
+    return "☆☆☆☆☆ · Confiança ainda não calculada";
+  }
+}
+
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return <div className="modal"><div className="modal-head"><h2>{title}</h2><button onClick={onClose}>×</button></div>{children}</div>;
 }
 
 function RncForm({ works, rnc, onSubmit }: { works: Work[]; rnc?: Rnc; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
   const today = new Date().toISOString().slice(0, 10);
+  const onlyWork = works[0];
   return <form className="rnc-form" onSubmit={onSubmit}>
-    <label className="span-2">Obra<select name="workId" defaultValue={rnc?.workId || ""} required><option value="" disabled>Selecione a obra</option>{works.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
+    <label className="span-2">Obra<input value={onlyWork?.name || rnc?.workName || "Parque Socioambiental do Roger – Fase II"} disabled /><input type="hidden" name="workId" value={onlyWork?.id || rnc?.workId || ""} /></label>
     <label>Nº RNC<input name="number" defaultValue={rnc?.number} inputMode="numeric" placeholder="096" required /></label>
     <label>Ano<input name="year" defaultValue={rnc?.year || new Date().getFullYear()} type="number" min="2000" max="2100" required /></label>
     <label className="span-2">Descrição<input name="description" defaultValue={rnc?.description} placeholder="Descreva a não conformidade" /></label>

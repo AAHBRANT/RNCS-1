@@ -2,17 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { ensureDatabase, getDb } from "../../../db";
 import { auditLog, rncs, works } from "../../../db/schema";
 
-const initialWorks = [
-  "Parque do Roger - Fase II",
-  "Ponte Rio Cuiá",
-  "Compl. Beira Rio",
-];
-
-const renamedWorks = [
-  ["Parque Socioambiental do Roger", "Parque do Roger - Fase II"],
-  ["Parque Linear do Cuiá", "Ponte Rio Cuiá"],
-  ["Parque Beira Rio", "Compl. Beira Rio"],
-] as const;
+const ONLY_WORK = "Parque Socioambiental do Roger – Fase II";
 
 const editableFields = [
   "workId", "number", "year", "description", "type", "receivedAt", "dueAt",
@@ -32,12 +22,7 @@ function addBusinessDays(dateValue: string, days = 5) {
 async function ensureWorks() {
   await ensureDatabase();
   const db = getDb();
-  for (const [oldName, newName] of renamedWorks) {
-    await db.update(works).set({ name: newName }).where(eq(works.name, oldName));
-  }
-  for (const name of initialWorks) {
-    await db.insert(works).values({ name }).onConflictDoNothing();
-  }
+  await db.insert(works).values({ name: ONLY_WORK }).onConflictDoNothing();
 }
 
 export async function GET() {
@@ -63,6 +48,7 @@ export async function GET() {
         responseOwner: rncs.responseOwner,
         analysisOwner: rncs.analysisOwner,
         fieldSources: rncs.fieldSources,
+        fieldConfidence: rncs.fieldConfidence,
         manualFields: rncs.manualFields,
         sourceSummary: rncs.sourceSummary,
         updatedAt: rncs.updatedAt,
@@ -117,6 +103,7 @@ export async function POST(request: Request) {
         status: "Preenchido manualmente", notes: "Preenchido manualmente",
         responseOwner: "Preenchido manualmente", analysisOwner: "Preenchido manualmente",
       }),
+      fieldConfidence: JSON.stringify({}),
       manualFields: JSON.stringify(outlookAudit ? [] : ["workId", "description", "type", "notes", "responseOwner", "analysisOwner"]),
       sourceSummary: outlookAudit ? "Importado após conferência das comunicações oficiais no Outlook." : "",
     }).returning();
@@ -146,6 +133,7 @@ export async function PATCH(request: Request) {
     const auditRows: Array<typeof auditLog.$inferInsert> = [];
     const manualFields = new Set<string>(JSON.parse(current.manualFields || "[]"));
     const fieldSources = JSON.parse(current.fieldSources || "{}") as Record<string, string>;
+    const fieldConfidence = JSON.parse(current.fieldConfidence || "{}") as Record<string, { score: number; reason: string }>;
     const outlookAudit = body.source === "outlook-browser-audit";
     for (const field of editableFields) {
       if (!(field in body)) continue;
@@ -167,6 +155,9 @@ export async function PATCH(request: Request) {
                   ? "Identificado no nome do anexo"
                   : "Identificado no e-mail"
           : "Preenchido manualmente";
+        if (!outlookAudit) {
+          fieldConfidence[field] = { score: 5, reason: "Valor confirmado manualmente pelo usuário." };
+        }
         auditRows.push({ rncId: id, field, oldValue: String(previous ?? ""), newValue: String(next ?? "") });
       }
     }
@@ -174,6 +165,7 @@ export async function PATCH(request: Request) {
     if (!Object.keys(changes).length) return Response.json({ rnc: current });
     changes.manualFields = JSON.stringify([...manualFields]);
     changes.fieldSources = JSON.stringify(fieldSources);
+    changes.fieldConfidence = JSON.stringify(fieldConfidence);
     changes.updatedAt = new Date().toISOString();
     const [updated] = await db.update(rncs).set(changes).where(and(eq(rncs.id, id))).returning();
     if (auditRows.length) await db.insert(auditLog).values(auditRows);
