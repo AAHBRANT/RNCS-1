@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type Work = { id: number; name: string };
@@ -291,7 +292,7 @@ export function RncApp() {
   return (
     <main>
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">RN</span><div><strong>Controle de RNC</strong><small>Gestão de não conformidades</small></div></div>
+        <div className="brand"><Image className="brand-mark" src="/favicon-rnc.png" alt="RNC" width={39} height={39} priority /><div><strong>Controle de RNC</strong><small>Gestão de não conformidades</small></div></div>
         <div className="header-actions">
           <span className="sync"><i /> {outlook.connected ? "Outlook conectado" : "Operação manual"}</span>
           <button

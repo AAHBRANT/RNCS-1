@@ -8,7 +8,7 @@ button, input, select, textarea { font:inherit; }
 button { cursor:pointer; }
 .topbar { height:72px; display:flex; align-items:center; justify-content:space-between; padding:0 34px; background:#fff; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20; }
 .brand { display:flex; align-items:center; gap:12px; }
-.brand-mark { display:grid; place-items:center; width:39px; height:39px; border-radius:11px; color:#fff; background:var(--green); font-weight:800; font-size:14px; letter-spacing:-.5px; box-shadow:0 5px 14px #1f6f5030; }
+.brand-mark { width:39px; height:39px; border-radius:11px; object-fit:cover; box-shadow:0 5px 14px #1f6f5030; }
 .brand div { display:flex; flex-direction:column; gap:2px; }
 .brand strong { font-size:15px; }
 .brand small { color:var(--muted); font-size:11px; }
