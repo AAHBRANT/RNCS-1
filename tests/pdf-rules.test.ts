@@ -71,5 +71,11 @@ test("usa o corpo oficial como fonte secundária inequívoca", () => {
     analysisStatusFromEmailBody("A tratativa não foi aprovada e deverá ser reenviada.")?.status,
     "Reprovada",
   );
+  assert.equal(
+    analysisStatusFromEmailBody(
+      "Encaminhamos a Análise de Tratativa de RNC referente à reprovação da tratativa encaminhada.",
+    )?.status,
+    "Reprovada",
+  );
   assert.equal(analysisStatusFromEmailBody("Encaminhamos a análise em anexo."), null);
 });

@@ -10,6 +10,7 @@ function normalizeAnalysisText(value: string) {
 export function analysisStatusFromEmailBody(body: string): AnalysisResult | null {
   const source = normalizeAnalysisText(body);
   const rejected = [
+    /reprovacao da tratativa/,
     /tratativa (?:foi )?(?:reprovada|nao aprovada|nao atendida|nao aceita)/,
     /medidas nao atenderam ao solicitado/,
     /providencias (?:tomadas )?nao estao em conformidade/,
