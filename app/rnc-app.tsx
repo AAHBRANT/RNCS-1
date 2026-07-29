@@ -5,7 +5,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 type Work = { id: number; name: string };
 type Rnc = {
   id: number; workId: number; workName: string; number: string; year: number;
-  description: string; type: string; receivedAt: string; dueAt: string;
+  description: string; type: string; receivedAt: string | null; dueAt: string | null;
   sentAt: string | null; returnedAt: string | null; status: string; notes: string;
   responseOwner: string; analysisOwner: string; updatedAt: string;
   fieldSources: string; manualFields: string; sourceSummary: string;
@@ -63,6 +63,9 @@ function hasBeenAnswered(rnc: Rnc) {
   return Boolean(rnc.sentAt) || hasAnsweredStatus(rnc);
 }
 function deadlineResult(rnc: Rnc) {
+  if (!rnc.dueAt) {
+    return { delta: null, label: "Prazo não identificado" };
+  }
   const comparison = rnc.sentAt || todayInBrazil();
   const delta = businessDayDelta(rnc.dueAt, comparison);
   if (rnc.sentAt) {
@@ -82,10 +85,11 @@ function deadlineResult(rnc: Rnc) {
 function urgency(rnc: Rnc) {
   if (rnc.status === "Aprovada") return "approved";
   if (rnc.status === "Reprovada") return "rejected";
-  if (rnc.sentAt) return deadlineResult(rnc).delta > 0 ? "answered-late" : "answered";
+  if (rnc.sentAt) return (deadlineResult(rnc).delta ?? 0) > 0 ? "answered-late" : "answered";
   if (hasAnsweredStatus(rnc)) return "answered";
   if (rnc.status === "Não identificado" || rnc.type === "A classificar") return "unclassified";
   const delta = deadlineResult(rnc).delta;
+  if (delta === null) return "unclassified";
   if (delta > 0) return "overdue";
   if (delta >= -2) return "warning";
   return "normal";
@@ -201,11 +205,11 @@ export function RncApp() {
     rejected: rows.filter((r) => r.status === "Reprovada").length,
     reopened: rows.filter((r) => r.status === "Reaberta").length,
     onTime: rows.filter((r) =>
-      (!hasBeenAnswered(r) && deadlineResult(r).delta <= 0)
-      || (!!r.sentAt && deadlineResult(r).delta <= 0)
+      (!hasBeenAnswered(r) && deadlineResult(r).delta !== null && deadlineResult(r).delta! <= 0)
+      || (!!r.sentAt && deadlineResult(r).delta !== null && deadlineResult(r).delta! <= 0)
     ).length,
-    overdue: rows.filter((r) => !hasBeenAnswered(r) && deadlineResult(r).delta > 0).length,
-    answeredLate: rows.filter((r) => !!r.sentAt && deadlineResult(r).delta > 0).length,
+    overdue: rows.filter((r) => !hasBeenAnswered(r) && (deadlineResult(r).delta ?? 0) > 0).length,
+    answeredLate: rows.filter((r) => !!r.sentAt && (deadlineResult(r).delta ?? 0) > 0).length,
   }), [rows]);
 
   async function createRnc(event: FormEvent<HTMLFormElement>) {

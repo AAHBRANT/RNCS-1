@@ -77,11 +77,12 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json() as Record<string, unknown>;
-    const receivedAt = String(body.receivedAt ?? "");
+    const receivedAt = body.receivedAt ? String(body.receivedAt) : null;
     const number = String(body.number ?? "").trim().padStart(3, "0");
-    if (!body.workId || !number || !body.year || !receivedAt) {
-      return Response.json({ error: "Obra, número, ano e recebimento são obrigatórios." }, { status: 400 });
+    if (!body.workId || !number || !body.year) {
+      return Response.json({ error: "Obra, número e ano são obrigatórios." }, { status: 400 });
     }
+    const outlookAudit = body.source === "outlook-browser-audit";
     const db = getDb();
     const [created] = await db.insert(rncs).values({
       workId: Number(body.workId),
@@ -90,14 +91,25 @@ export async function POST(request: Request) {
       description: String(body.description || "Descrição não identificada"),
       type: String(body.type || "A classificar"),
       receivedAt,
-      dueAt: addBusinessDays(receivedAt),
+      dueAt: receivedAt ? addBusinessDays(receivedAt) : null,
       status: String(body.status || "Recebida"),
       notes: String(body.notes || ""),
       responseOwner: String(body.responseOwner || ""),
       analysisOwner: String(body.analysisOwner || ""),
       sentAt: body.sentAt ? String(body.sentAt) : null,
       returnedAt: body.returnedAt ? String(body.returnedAt) : null,
-      fieldSources: JSON.stringify({
+      fieldSources: JSON.stringify(outlookAudit ? {
+        workId: "Identificado no e-mail recebido",
+        number: "Identificado no e-mail",
+        year: "Identificado no e-mail",
+        description: body.description ? "Identificado no nome do anexo" : "Não identificado",
+        type: body.type && body.type !== "A classificar" ? "Identificado no nome do anexo" : "Não identificado",
+        receivedAt: receivedAt ? "Identificado no e-mail recebido" : "Não identificado",
+        sentAt: body.sentAt ? "Identificado nos Itens Enviados" : "Não identificado",
+        returnedAt: body.returnedAt ? "Identificado no e-mail de análise" : "Não identificado",
+        status: body.returnedAt ? "Identificado no e-mail de análise" : body.sentAt ? "Identificado nos Itens Enviados" : "Identificado no e-mail recebido",
+        responseOwner: "Não identificado",
+      } : {
         workId: "Preenchido manualmente", number: "Preenchido manualmente", year: "Preenchido manualmente",
         description: "Preenchido manualmente", type: "Preenchido manualmente",
         receivedAt: "Preenchido manualmente", sentAt: body.sentAt ? "Preenchido manualmente" : undefined,
@@ -105,9 +117,14 @@ export async function POST(request: Request) {
         status: "Preenchido manualmente", notes: "Preenchido manualmente",
         responseOwner: "Preenchido manualmente", analysisOwner: "Preenchido manualmente",
       }),
-      manualFields: JSON.stringify(["workId", "description", "type", "notes", "responseOwner", "analysisOwner"]),
+      manualFields: JSON.stringify(outlookAudit ? [] : ["workId", "description", "type", "notes", "responseOwner", "analysisOwner"]),
+      sourceSummary: outlookAudit ? "Importado após conferência das comunicações oficiais no Outlook." : "",
     }).returning();
-    await db.insert(auditLog).values({ rncId: created.id, field: "registro", newValue: "RNC criada manualmente" });
+    await db.insert(auditLog).values({
+      rncId: created.id,
+      field: "registro",
+      newValue: outlookAudit ? "RNC importada da comunicação oficial no Outlook" : "RNC criada manualmente",
+    });
     return Response.json({ rnc: created }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao cadastrar RNC.";

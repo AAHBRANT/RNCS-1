@@ -301,7 +301,7 @@ async function processMessage(
       const changes: Partial<typeof rncs.$inferInsert> = {};
       const sources = parsedJson<Record<string, string>>(rnc.fieldSources, {});
       if (eventType === "recebimento") {
-        if (canAutoUpdate(rnc, "receivedAt") && occurredDate < rnc.receivedAt) {
+        if (canAutoUpdate(rnc, "receivedAt") && (!rnc.receivedAt || occurredDate < rnc.receivedAt)) {
           changes.receivedAt = occurredDate; changes.dueAt = addBusinessDays(occurredDate);
           sources.receivedAt = "Identificado no e-mail recebido";
         }

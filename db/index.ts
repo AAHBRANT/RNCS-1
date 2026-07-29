@@ -74,6 +74,8 @@ async function initializeDatabaseOnce() {
   await sql`ALTER TABLE rncs ADD COLUMN IF NOT EXISTS field_sources TEXT NOT NULL DEFAULT '{}'`;
   await sql`ALTER TABLE rncs ADD COLUMN IF NOT EXISTS manual_fields TEXT NOT NULL DEFAULT '[]'`;
   await sql`ALTER TABLE rncs ADD COLUMN IF NOT EXISTS source_summary TEXT NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE rncs ALTER COLUMN received_at DROP NOT NULL`;
+  await sql`ALTER TABLE rncs ALTER COLUMN due_at DROP NOT NULL`;
   await sql`CREATE INDEX IF NOT EXISTS rncs_status_idx ON rncs(status)`;
   await sql`CREATE INDEX IF NOT EXISTS rncs_due_at_idx ON rncs(due_at)`;
   await sql`CREATE TABLE IF NOT EXISTS email_events (
