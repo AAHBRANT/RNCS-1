@@ -191,10 +191,21 @@ async function attachmentsForMessage(accessToken: string, message: GraphMessage)
       id: attachment.id, name: attachment.name || "Anexo sem nome",
       contentType: attachment.contentType || "application/octet-stream", size: attachment.size || 0,
     };
-    if (info.size <= 12_000_000 && /\.(pdf|docx|txt)$/i.test(info.name)) {
+    const isPdf = /\.pdf$/i.test(info.name);
+    const safeToProcess = isPdf ? info.size <= 4_000_000 : info.size <= 12_000_000;
+    if (isPdf && !safeToProcess) {
+      info.pdfProcessing = {
+        success: false,
+        needsOcr: false,
+        fileName: info.name,
+        pageCount: 0,
+        information: null,
+        error: "PDF acima de 4 MB — mantido no histórico sem leitura automática para preservar a sincronização.",
+      };
+    } else if (safeToProcess && /\.(pdf|docx|txt)$/i.test(info.name)) {
       const detail = await graph<GraphAttachment>(accessToken,
         `/me/messages/${encodeURIComponent(message.id)}/attachments/${encodeURIComponent(attachment.id)}`);
-      if (/\.pdf$/i.test(info.name) && detail.contentBytes) {
+      if (isPdf && detail.contentBytes) {
         info.pdfProcessing = await processRncAttachment({
           fileName: info.name,
           contentType: info.contentType,
