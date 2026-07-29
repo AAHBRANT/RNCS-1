@@ -421,7 +421,7 @@ export function RncApp() {
                 <td className="description">{r.description}</td><td><span className="type-tag">{r.type}</span></td><td>{fmt(r.receivedAt)}</td>
                 <td><strong>{fmt(r.dueAt)}</strong><small>{deadlineResult(r).label}</small></td>
                 <td>{fmt(r.sentAt)}</td><td>{fmt(r.returnedAt)}</td><td><span className={`status status-${r.status.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replaceAll(" ", "-")}`}>{r.status}</span></td>
-                <td>{r.responseOwner || "Não identificado"}</td><td className="row-actions"><button className="respond-button" onClick={(event) => { event.stopPropagation(); setResponding(r); setDirective(""); }}>{r.status === "Aprovada" ? "Nova tratativa" : "Responder RNC"}</button><button className="dots" aria-label={`Abrir RNC ${r.number}`}>•••</button></td>
+                <td>{r.responseOwner || "Não identificado"}</td><td className="row-actions">{r.status !== "Aprovada" && <button className="respond-button" onClick={(event) => { event.stopPropagation(); setResponding(r); setDirective(""); }}>Responder RNC</button>}<button className="dots" aria-label={`Abrir RNC ${r.number}`}>•••</button></td>
               </tr>)}
             </tbody>
           </table>
@@ -453,7 +453,7 @@ export function RncApp() {
         </div>
         <div className="drawer-footer split"><button className="button secondary" onClick={() => reprocessRnc(selected)} disabled={syncing}>Reprocessar RNC</button><button className="button primary" onClick={() => setEditing(selected)}>Editar RNC</button></div>
       </aside>}
-      {responding && <Modal title={`${responding.status === "Aprovada" ? "Nova tratativa" : "Responder RNC"} ${responding.number}/${responding.year}`} onClose={() => setResponding(null)}>
+      {responding && responding.status !== "Aprovada" && <Modal title={`Responder RNC ${responding.number}/${responding.year}`} onClose={() => setResponding(null)}>
         <div className="response-panel">
           <div className="response-summary"><strong>{responding.workName}</strong><span>{responding.description}</span><small>Recebida em {fmt(responding.receivedAt)} · prazo {fmt(responding.dueAt)} · {responding.responseOwner || "Responsável não identificado"}</small></div>
           <label>Diretriz para elaboração da resposta<textarea value={directive} onChange={(event) => setDirective(event.target.value)} rows={6} required placeholder="Informe o que foi executado, quais documentos ou evidências serão apresentados, eventuais justificativas e o posicionamento que deverá ser adotado na resposta." /></label>
