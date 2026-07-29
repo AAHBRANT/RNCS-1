@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { graphScopes, microsoftConfig } from "../../../../lib/outlook-auth";
 import { canEditRnc, sessionFromRequest } from "../../../../lib/access-control";
+import { enforceRateLimit } from "../../../../lib/rate-limit";
 
 export async function GET(request: Request) {
   try {
@@ -9,6 +10,13 @@ export async function GET(request: Request) {
     if (!session || !canEditRnc(session)) {
       return NextResponse.redirect(new URL("/?outlook=error&message=Somente%20a%20administradora%20pode%20conectar%20o%20Outlook.", request.url));
     }
+    const limited = await enforceRateLimit(request, {
+      scope: "outlook-connect",
+      limit: 10,
+      windowSeconds: 600,
+      identity: session.email,
+    });
+    if (limited) return limited;
     const origin = new URL(request.url).origin;
     const config = microsoftConfig(origin);
     const state = randomBytes(24).toString("base64url");

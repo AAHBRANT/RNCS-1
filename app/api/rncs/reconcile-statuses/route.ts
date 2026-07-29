@@ -2,13 +2,25 @@ import { asc, eq } from "drizzle-orm";
 import { ensureDatabase, getDb } from "../../../../db";
 import { emailEvents, rncs } from "../../../../db/schema";
 import { analysisStatusFromEmailBody } from "../../../../lib/rnc-analysis";
+import { canEditRnc, forbidden, sessionFromRequest, unauthorized } from "../../../../lib/access-control";
+import { enforceRateLimit } from "../../../../lib/rate-limit";
 
 function parsedJson<T>(value: string, fallback: T): T {
   try { return JSON.parse(value) as T; } catch { return fallback; }
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
+    const session = sessionFromRequest(request);
+    if (!session) return unauthorized();
+    if (!canEditRnc(session)) return forbidden("Somente a administradora pode reconciliar os status.");
+    const limited = await enforceRateLimit(request, {
+      scope: "reconcile-statuses",
+      limit: 10,
+      windowSeconds: 300,
+      identity: session.email,
+    });
+    if (limited) return limited;
     await ensureDatabase();
     const db = getDb();
     const [events, records] = await Promise.all([

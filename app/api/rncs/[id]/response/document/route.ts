@@ -7,6 +7,7 @@ import {
   sessionFromRequest,
   unauthorized,
 } from "../../../../../../lib/access-control";
+import { enforceRateLimit } from "../../../../../../lib/rate-limit";
 
 const MAX_DOCUMENT_SIZE = 3 * 1024 * 1024;
 const DOCX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -34,6 +35,13 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
   const requestedId = Number(new URL(request.url).searchParams.get("document"));
   if (requestedId) {
+    const limited = await enforceRateLimit(request, {
+      scope: "word-download",
+      limit: 60,
+      windowSeconds: 300,
+      identity: access.session.email,
+    });
+    if (limited) return limited;
     const [document] = await access.db.select().from(rncResponseDocuments)
       .where(and(eq(rncResponseDocuments.id, requestedId), eq(rncResponseDocuments.rncId, access.rncId)))
       .limit(1);
@@ -67,6 +75,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const { id } = await context.params;
   const access = await authorizedRnc(request, id);
   if ("error" in access) return access.error;
+  const limited = await enforceRateLimit(request, {
+    scope: "word-upload",
+    limit: 12,
+    windowSeconds: 600,
+    identity: access.session.email,
+  });
+  if (limited) return limited;
 
   const form = await request.formData();
   const file = form.get("document");

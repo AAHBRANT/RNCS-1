@@ -8,6 +8,7 @@ import {
   unauthorized,
 } from "../../../../../../lib/access-control";
 import { fillRncTemplate } from "../../../../../../lib/docx-template";
+import { enforceRateLimit } from "../../../../../../lib/rate-limit";
 
 const DOCX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const MAX_PHOTO_SIZE = 800 * 1024;
@@ -43,6 +44,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (!canAccessType(session, rnc.type)) {
     return forbidden("Esta RNC pertence a uma disciplina não autorizada para você.");
   }
+  const limited = await enforceRateLimit(request, {
+    scope: "generate-word",
+    limit: 8,
+    windowSeconds: 600,
+    identity: session.email,
+  });
+  if (limited) return limited;
 
   const form = await request.formData();
   let draft: Record<string, string>;

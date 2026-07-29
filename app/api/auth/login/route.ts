@@ -1,8 +1,15 @@
 import { randomBytes } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { microsoftConfig } from "../../../../lib/outlook-auth";
+import { enforceRateLimit } from "../../../../lib/rate-limit";
 
 export async function GET(request: NextRequest) {
+  const limited = await enforceRateLimit(request, {
+    scope: "auth-login",
+    limit: 10,
+    windowSeconds: 600,
+  });
+  if (limited) return limited;
   const config = microsoftConfig(request.nextUrl.origin);
   const redirectUri = `${request.nextUrl.origin}/api/auth/callback`;
   const state = randomBytes(24).toString("base64url");

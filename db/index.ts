@@ -221,6 +221,12 @@ async function initializeDatabaseOnce() {
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`;
+  await sql`CREATE TABLE IF NOT EXISTS api_rate_limits (
+    key TEXT PRIMARY KEY,
+    count INTEGER NOT NULL DEFAULT 1,
+    window_start TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMPTZ NOT NULL
+  )`;
   await sql`INSERT INTO access_users (name, email, role, allowed_types, can_view_all, active)
     VALUES
       ('Isabella Marques', 'isabella.marques@aahbrant.com', 'admin', '["*"]', TRUE, TRUE),

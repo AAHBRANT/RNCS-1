@@ -2,6 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { ensureDatabase, getDb } from "../../../db";
 import { auditLog, rncs, works } from "../../../db/schema";
 import { accessControlEnabled, canAccessType, canEditRnc, forbidden, sessionFromRequest, unauthorized } from "../../../lib/access-control";
+import { enforceRateLimit } from "../../../lib/rate-limit";
 
 const ONLY_WORK = "Parque Socioambiental do Roger – Fase II";
 
@@ -72,6 +73,13 @@ export async function POST(request: Request) {
     const session = sessionFromRequest(request);
     if (!session) return unauthorized();
     if (!canEditRnc(session)) return forbidden("Somente a administradora pode cadastrar RNCs manualmente.");
+    const limited = await enforceRateLimit(request, {
+      scope: "rnc-write",
+      limit: 30,
+      windowSeconds: 300,
+      identity: session.email,
+    });
+    if (limited) return limited;
     const body = await request.json() as Record<string, unknown>;
     const receivedAt = body.receivedAt ? String(body.receivedAt) : null;
     const number = String(body.number ?? "").trim().padStart(3, "0");
@@ -136,6 +144,13 @@ export async function PATCH(request: Request) {
     const session = sessionFromRequest(request);
     if (!session) return unauthorized();
     if (!canEditRnc(session)) return forbidden("Somente a administradora pode editar os dados cadastrais da RNC.");
+    const limited = await enforceRateLimit(request, {
+      scope: "rnc-write",
+      limit: 30,
+      windowSeconds: 300,
+      identity: session.email,
+    });
+    if (limited) return limited;
     const body = await request.json() as Record<string, unknown>;
     const id = Number(body.id);
     if (!id) return Response.json({ error: "RNC inválida." }, { status: 400 });

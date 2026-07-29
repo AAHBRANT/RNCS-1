@@ -16,6 +16,7 @@ import {
   sessionFromRequest,
   unauthorized,
 } from "../../../../../lib/access-control";
+import { enforceRateLimit } from "../../../../../lib/rate-limit";
 
 const textFields = [
   "directive",
@@ -91,6 +92,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (rnc.status === "Aprovada") {
     return Response.json({ error: "RNC aprovada não permite nova elaboração." }, { status: 409 });
   }
+  const limited = await enforceRateLimit(request, {
+    scope: "response-save",
+    limit: 30,
+    windowSeconds: 300,
+    identity: session.email,
+  });
+  if (limited) return limited;
 
   const values = Object.fromEntries(textFields.map((field) => [field, String(body[field] || "")]));
   const selectedAttachments = Array.isArray(body.selectedAttachments)

@@ -177,3 +177,10 @@ export const accessUsers = pgTable("access_users", {
 }, (table) => [
   uniqueIndex("access_users_email_unique").on(table.email),
 ]);
+
+export const apiRateLimits = pgTable("api_rate_limits", {
+  key: text("key").primaryKey(),
+  count: integer("count").notNull().default(1),
+  windowStart: timestamp("window_start", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
+});
