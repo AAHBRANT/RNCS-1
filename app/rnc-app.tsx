@@ -30,6 +30,7 @@ type AccessUser = { name: string; email: string; role: "admin" | "drafter" | "re
 
 const statusOptions = ["Recebida", "Em elaboração", "Respondida", "Aprovada", "Reprovada", "Reaberta", "Retorno recebido — status a confirmar", "Não identificado"];
 const typeOptions = ["Segurança do Trabalho", "Ambiental", "Qualidade", "Projeto", "Execução", "Documental", "Outro", "A classificar"];
+const PAGE_SIZE = 20;
 const labelByField: Record<string, string> = {
   registro: "Registro", workId: "Obra", number: "Nº RNC", year: "Ano",
   description: "Descrição", type: "Tipo", receivedAt: "Recebimento", dueAt: "Prazo",
@@ -117,6 +118,7 @@ export function RncApp() {
   const [year, setYear] = useState("all");
   const [search, setSearch] = useState("");
   const [cardFilter, setCardFilter] = useState("all");
+  const [currentPage, setCurrentPage] = useState(1);
   const [busy, setBusy] = useState(true);
   const [notice, setNotice] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -260,8 +262,15 @@ export function RncApp() {
       && (!term || `${r.number} ${r.description} ${r.notes} ${r.responseOwner}`.toLocaleLowerCase("pt-BR").includes(term));
   }), [rows, status, type, year, search, cardFilter]);
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const page = Math.min(currentPage, totalPages);
+  const firstRecord = filtered.length ? (page - 1) * PAGE_SIZE + 1 : 0;
+  const lastRecord = Math.min(page * PAGE_SIZE, filtered.length);
+  const paginated = filtered.slice(firstRecord ? firstRecord - 1 : 0, lastRecord);
+
   function clearFilters() {
     setStatus("all"); setType("all"); setYear("all"); setSearch(""); setCardFilter("all");
+    setCurrentPage(1);
   }
 
   const stats = useMemo(() => ({
@@ -398,33 +407,33 @@ export function RncApp() {
           ["Respondidas · aguardando análise", stats.answered, "blue", "answered"], ["Aprovadas", stats.approved, "green", "approved"],
           ["Reprovadas", stats.rejected, "red", "rejected"], ["Reabertas", stats.reopened, "violet", "reopened"],
           ["Status a confirmar", stats.pendingReview, "orange", "pendingReview"],
-        ].map(([label, value, tone, filter]) => <button type="button" key={String(label)} aria-pressed={cardFilter === filter} onClick={() => setCardFilter((current) => current === filter ? "all" : String(filter))} className={`metric ${tone} ${cardFilter === filter ? "active" : ""}`}><span>{label}</span><strong>{value}</strong><div className="metric-line" /></button>)}
+        ].map(([label, value, tone, filter]) => <button type="button" key={String(label)} aria-pressed={cardFilter === filter} onClick={() => { setCardFilter((current) => current === filter ? "all" : String(filter)); setCurrentPage(1); }} className={`metric ${tone} ${cardFilter === filter ? "active" : ""}`}><span>{label}</span><strong>{value}</strong><div className="metric-line" /></button>)}
       </section>
       <p className="metric-group-label">Cumprimento do prazo — categorias exclusivas</p>
       <section className="metrics deadline-metrics">
         {[
           ["Dentro do prazo", stats.onTime, "teal", "onTime"], ["Vencidas", stats.overdue, "red", "overdue"],
           ["Respondidas com atraso", stats.answeredLate, "orange", "answeredLate"],
-        ].map(([label, value, tone, filter]) => <button type="button" key={String(label)} aria-pressed={cardFilter === filter} onClick={() => setCardFilter((current) => current === filter ? "all" : String(filter))} className={`metric ${tone} ${cardFilter === filter ? "active" : ""}`}><span>{label}</span><strong>{value}</strong><div className="metric-line" /></button>)}
+        ].map(([label, value, tone, filter]) => <button type="button" key={String(label)} aria-pressed={cardFilter === filter} onClick={() => { setCardFilter((current) => current === filter ? "all" : String(filter)); setCurrentPage(1); }} className={`metric ${tone} ${cardFilter === filter ? "active" : ""}`}><span>{label}</span><strong>{value}</strong><div className="metric-line" /></button>)}
       </section>
 
       <section className="workspace">
         <div className="filters">
-          <label className="search"><span>⌕</span><input aria-label="Pesquisar RNC" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Pesquisar número, descrição ou texto…" /></label>
-          <select aria-label="Filtrar por status" value={status} onChange={(e) => setStatus(e.target.value)}><option value="all">Todos os status</option>{statusOptions.map((s) => <option key={s}>{s}</option>)}</select>
-          <select aria-label="Filtrar por tipo" value={type} onChange={(e) => setType(e.target.value)}><option value="all">Todos os tipos</option>{typeOptions.map((t) => <option key={t}>{t}</option>)}</select>
-          <select aria-label="Filtrar por ano" value={year} onChange={(e) => setYear(e.target.value)}><option value="all">Todos os anos</option>{years.map((y) => <option key={y}>{y}</option>)}</select>
+          <label className="search"><span>⌕</span><input aria-label="Pesquisar RNC" value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }} placeholder="Pesquisar número, descrição ou texto…" /></label>
+          <select aria-label="Filtrar por status" value={status} onChange={(e) => { setStatus(e.target.value); setCurrentPage(1); }}><option value="all">Todos os status</option>{statusOptions.map((s) => <option key={s}>{s}</option>)}</select>
+          <select aria-label="Filtrar por tipo" value={type} onChange={(e) => { setType(e.target.value); setCurrentPage(1); }}><option value="all">Todos os tipos</option>{typeOptions.map((t) => <option key={t}>{t}</option>)}</select>
+          <select aria-label="Filtrar por ano" value={year} onChange={(e) => { setYear(e.target.value); setCurrentPage(1); }}><option value="all">Todos os anos</option>{years.map((y) => <option key={y}>{y}</option>)}</select>
           <button className="button clear-filters" type="button" onClick={clearFilters}>Limpar filtros</button>
         </div>
-        <div className="table-meta"><strong>{filtered.length} registros</strong><span>Atualização local: {updatedLabel}</span></div>
+        <div className="table-meta"><strong>Exibindo {firstRecord}–{lastRecord} de {filtered.length} registros</strong><span>Atualização local: {updatedLabel}</span></div>
         <div className="table-scroll">
           <table>
             <thead><tr><th>Item</th><th>Nº RNC</th><th>Ano</th><th>Descrição</th><th>Tipo</th><th>Recebimento</th><th>Prazo de envio</th><th>Envio</th><th>Retorno</th><th>Status</th><th>Resp. pela resposta</th><th /></tr></thead>
             <tbody>
               {busy && <tr><td colSpan={12} className="empty">Carregando registros…</td></tr>}
               {!busy && !filtered.length && <tr><td colSpan={12} className="empty"><strong>Nenhuma RNC encontrada</strong><span>Cadastre a primeira RNC ou ajuste os filtros.</span></td></tr>}
-              {filtered.map((r, index) => <tr key={r.id} className={`row-${urgency(r)}`} onClick={() => openDetails(r)}>
-                <td className="item">{String(index + 1).padStart(2, "0")}</td><td><strong className="rnc-number">RNC {r.number}</strong><small>{r.workName}</small></td><td>{r.year}</td>
+              {paginated.map((r, index) => <tr key={r.id} className={`row-${urgency(r)}`} onClick={() => openDetails(r)}>
+                <td className="item">{String((page - 1) * PAGE_SIZE + index + 1).padStart(2, "0")}</td><td><strong className="rnc-number">RNC {r.number}</strong><small>{r.workName}</small></td><td>{r.year}</td>
                 <td className="description">{r.description}</td><td><span className="type-tag">{r.type}</span></td><td>{fmt(r.receivedAt)}</td>
                 <td><strong>{fmt(r.dueAt)}</strong><small>{deadlineResult(r).label}</small></td>
                 <td>{fmt(r.sentAt)}</td><td>{fmt(r.returnedAt)}</td><td><span className={`status status-${r.status.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replaceAll(" ", "-")}`}>{r.status}</span></td>
@@ -433,6 +442,11 @@ export function RncApp() {
             </tbody>
           </table>
         </div>
+        {filtered.length > PAGE_SIZE && <nav className="pagination" aria-label="Paginação das RNCs">
+          <button type="button" disabled={page === 1} onClick={() => setCurrentPage(page - 1)}>← Anterior</button>
+          <span>Página <strong>{page}</strong> de {totalPages}</span>
+          <button type="button" disabled={page === totalPages} onClick={() => setCurrentPage(page + 1)}>Próxima →</button>
+        </nav>}
       </section>
 
       {notice && <button className="toast" onClick={() => setNotice("")}>{notice}<span>×</span></button>}
