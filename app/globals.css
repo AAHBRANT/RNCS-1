@@ -189,7 +189,7 @@ dd { margin:0; font-size:12px; font-weight:700; }
 .document-preview-content > div { width:100%; min-width:0; transform-origin:top center; }
 .document-preview-content .docx-wrapper { min-height:100%; align-items:center!important; padding:25px!important; overflow:visible!important; background:#d9ddda!important; }
 .document-preview-content .docx-wrapper > section.rnc-docx-preview { width:210mm!important; min-width:210mm!important; min-height:297mm!important; box-sizing:border-box!important; margin:0 auto 22px!important; overflow:hidden!important; box-shadow:0 4px 16px rgba(0,0,0,.17); }
-.document-preview-content section.rnc-docx-preview table { width:100%!important; max-width:100%!important; table-layout:fixed!important; }
+.document-preview-content section.rnc-docx-preview table { max-width:100%!important; table-layout:fixed!important; }
 .document-preview-content section.rnc-docx-preview td,.document-preview-content section.rnc-docx-preview th { min-width:0!important; max-width:100%!important; overflow-wrap:anywhere; word-break:normal; }
 .document-preview-content section.rnc-docx-preview img { max-width:100%!important; height:auto!important; }
 .preview-zoom { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:10px; font-weight:700; }

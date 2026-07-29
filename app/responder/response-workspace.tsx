@@ -62,6 +62,32 @@ function attachmentsFromEmails(emails: EmailEvent[]) {
   return [...new Map(attachments.map((item) => [item.id || item.name, item])).values()];
 }
 
+function fitPreviewTables(container: HTMLDivElement) {
+  container.querySelectorAll<HTMLElement>("section.rnc-docx-preview").forEach((page) => {
+    const pageStyle = window.getComputedStyle(page);
+    const availableWidth = page.clientWidth
+      - Number.parseFloat(pageStyle.paddingLeft)
+      - Number.parseFloat(pageStyle.paddingRight);
+
+    page.querySelectorAll<HTMLTableElement>("table").forEach((table) => {
+      table.style.removeProperty("width");
+      table.style.removeProperty("max-width");
+      table.style.tableLayout = "fixed";
+
+      const renderedWidth = Math.max(table.scrollWidth, table.getBoundingClientRect().width);
+      if (!renderedWidth || renderedWidth <= availableWidth + 1) return;
+
+      const ratio = availableWidth / renderedWidth;
+      table.querySelectorAll<HTMLTableColElement>("col").forEach((column) => {
+        const width = Number.parseFloat(window.getComputedStyle(column).width);
+        if (width > 0) column.style.width = `${width * ratio}px`;
+      });
+      table.style.width = `${availableWidth}px`;
+      table.style.maxWidth = "100%";
+    });
+  });
+}
+
 export function ResponseWorkspace() {
   const [rncs, setRncs] = useState<RncListItem[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -151,6 +177,8 @@ export function ResponseWorkspace() {
           breakPages: true,
           useBase64URL: true,
         });
+        await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+        if (active) fitPreviewTables(container);
       })
       .catch((error) => {
         if (active) setNotice(error instanceof Error ? error.message : "Não foi possível abrir o documento.");
