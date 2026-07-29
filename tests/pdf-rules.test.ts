@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { extractRncInformation } from "../lib/pdf/extract-rnc-information";
 import { processRncAttachment } from "../lib/pdf/process-rnc-attachment";
-import { analysisStatusFromEmailBody } from "../lib/outlook-sync";
+import { analysisStatusFromEmailBody } from "../lib/rnc-analysis";
 
 test("identifica número e ano da RNC", () => {
   assert.deepEqual(

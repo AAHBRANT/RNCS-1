@@ -6,6 +6,7 @@ import {
 import { encryptToken, refreshAccessToken } from "./outlook-auth";
 import { processRncAttachment } from "./pdf/process-rnc-attachment";
 import type { ProcessRncAttachmentResult } from "./pdf/types";
+import { analysisStatusFromEmailBody } from "./rnc-analysis";
 
 type FolderKind = "inbox" | "sent";
 type GraphFolder = { id: string; displayName: string; childFolderCount?: number };
@@ -257,43 +258,6 @@ function analysisStatus(documentText: string): { status: string; confidence: Con
     status: "Retorno recebido — status a confirmar",
     confidence: { score: 2, reason: "Documento analisado, mas sem resultado inequívoco." },
   };
-}
-
-export function analysisStatusFromEmailBody(body: string): { status: string; confidence: Confidence } | null {
-  const source = normalize(body);
-  const rejected = [
-    /tratativa (?:foi )?(?:reprovada|nao aprovada|nao atendida|nao aceita)/,
-    /medidas nao atenderam ao solicitado/,
-    /providencias (?:tomadas )?nao estao em conformidade/,
-    /necessita (?:de )?correcao/,
-    /devera ser reenviad/,
-  ].some((pattern) => pattern.test(source));
-  if (rejected) {
-    return {
-      status: "Reprovada",
-      confidence: {
-        score: 4,
-        reason: "Resultado inequívoco identificado no corpo do e-mail oficial de análise; PDF sem resultado extraível.",
-      },
-    };
-  }
-  const approved = [
-    /aprovacao da tratativa/,
-    /tratativa (?:foi )?aprovada/,
-    /medidas atenderam ao solicitado/,
-    /providencias (?:tomadas )?estao em conformidade/,
-    /tratativa considerada atendida/,
-  ].some((pattern) => pattern.test(source));
-  if (approved) {
-    return {
-      status: "Aprovada",
-      confidence: {
-        score: 4,
-        reason: "Resultado inequívoco identificado no corpo do e-mail oficial de análise; PDF sem resultado extraível.",
-      },
-    };
-  }
-  return null;
 }
 
 function confidenceScore(value: "HIGH" | "MEDIUM" | "LOW") {

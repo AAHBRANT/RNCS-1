@@ -185,6 +185,10 @@ export function RncApp() {
     }
     setSyncing(true);
     try {
+      // Reconcile returns already stored in the dossier before the heavier
+      // Outlook/PDF pass. This keeps status cards accurate even when a large
+      // attachment needs to be skipped or retried.
+      await fetch("/api/rncs/reconcile-statuses", { method: "POST" });
       let cursor: string | undefined;
       let complete = false;
       let batches = 0;
