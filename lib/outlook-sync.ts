@@ -306,7 +306,7 @@ async function processMessage(
   const occurredAt = message.sentDateTime || message.receivedDateTime || new Date().toISOString();
   const occurredDate = dateOnly(occurredAt);
   const isAnalysis = officialIncoming
-    && /^encaminhamento de analise(?:s)? de tratativa(?:s)? do(?:s)? rnc/i.test(normalize(subject).trim());
+    && /encaminhamento de analise(?:s)? de tratativa(?:s)? do(?:s)? rnc/i.test(normalize(subject));
   const eventType = officialSent ? "envio_resposta" : isAnalysis ? "retorno_supervisao" : "recebimento";
 
   for (const identity of identities) {
@@ -398,15 +398,34 @@ async function processMessage(
       }
     }
 
-    await db.insert(emailEvents).values({
+    const associationConfidence = identityIsStrong(identity, subject, attachmentNames) ? 5 : conversationLinked ? 4 : 3;
+    const eventValues: typeof emailEvents.$inferInsert = {
       rncId: rnc.id, outlookMessageId: message.id, internetMessageId: message.internetMessageId,
       conversationId: message.conversationId, folderName: folder.path, eventType, sender,
       inReplyTo: message.internetMessageHeaders?.find((header) => normalize(header.name || "") === "in-reply-to")?.value,
       references: message.internetMessageHeaders?.find((header) => normalize(header.name || "") === "references")?.value,
-      associationConfidence: identityIsStrong(identity, subject, attachmentNames) ? 5 : conversationLinked ? 4 : 3,
+      associationConfidence,
       recipients: recipientsList.join(", "), subject, summary: body.slice(0, 2000), occurredAt,
       attachmentMetadata: JSON.stringify(attachments.map(({ extractedText: _, ...item }) => item)),
-    }).onConflictDoNothing();
+    };
+    await db.insert(emailEvents).values(eventValues).onConflictDoUpdate({
+      target: [emailEvents.rncId, emailEvents.outlookMessageId],
+      set: {
+        internetMessageId: eventValues.internetMessageId,
+        conversationId: eventValues.conversationId,
+        folderName: eventValues.folderName,
+        eventType,
+        sender,
+        recipients: eventValues.recipients,
+        subject,
+        summary: eventValues.summary,
+        occurredAt,
+        attachmentMetadata: eventValues.attachmentMetadata,
+        inReplyTo: eventValues.inReplyTo,
+        references: eventValues.references,
+        associationConfidence,
+      },
+    });
     stats.eventsImported++;
   }
   return stats;
