@@ -22,6 +22,9 @@ export const rncs = pgTable("rncs", {
   notes: text("notes").notNull().default(""),
   responseOwner: text("response_owner").notNull().default(""),
   analysisOwner: text("analysis_owner").notNull().default(""),
+  fieldSources: text("field_sources").notNull().default("{}"),
+  manualFields: text("manual_fields").notNull().default("[]"),
+  sourceSummary: text("source_summary").notNull().default(""),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
@@ -33,7 +36,10 @@ export const rncs = pgTable("rncs", {
 export const emailEvents = pgTable("email_events", {
   id: serial("id").primaryKey(),
   rncId: integer("rnc_id").notNull().references(() => rncs.id),
-  outlookMessageId: text("outlook_message_id").unique(),
+  outlookMessageId: text("outlook_message_id").notNull(),
+  internetMessageId: text("internet_message_id"),
+  conversationId: text("conversation_id"),
+  folderName: text("folder_name"),
   eventType: text("event_type").notNull(),
   sender: text("sender"),
   recipients: text("recipients"),
@@ -42,7 +48,10 @@ export const emailEvents = pgTable("email_events", {
   occurredAt: timestamp("occurred_at", { withTimezone: true, mode: "string" }).notNull(),
   attachmentMetadata: text("attachment_metadata"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-});
+}, (table) => [
+  uniqueIndex("email_events_rnc_message_unique").on(table.rncId, table.outlookMessageId),
+  index("email_events_rnc_occurred_idx").on(table.rncId, table.occurredAt),
+]);
 
 export const auditLog = pgTable("audit_log", {
   id: serial("id").primaryKey(),
@@ -75,3 +84,24 @@ export const outlookSyncFolders = pgTable("outlook_sync_folders", {
 }, (table) => [
   uniqueIndex("outlook_sync_folder_unique").on(table.connectionId, table.folderId),
 ]);
+
+export const syncRuns = pgTable("sync_runs", {
+  id: serial("id").primaryKey(),
+  connectionId: integer("connection_id").references(() => outlookConnections.id),
+  startedAt: timestamp("started_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  finishedAt: timestamp("finished_at", { withTimezone: true, mode: "string" }),
+  status: text("status").notNull().default("running"),
+  foldersChecked: text("folders_checked").notNull().default("[]"),
+  importedCount: integer("imported_count").notNull().default(0),
+  message: text("message"),
+});
+
+export const rncConflicts = pgTable("rnc_conflicts", {
+  id: serial("id").primaryKey(),
+  rncId: integer("rnc_id").notNull().references(() => rncs.id),
+  field: text("field").notNull(),
+  candidateValues: text("candidate_values").notNull(),
+  status: text("status").notNull().default("open"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: "string" }),
+});

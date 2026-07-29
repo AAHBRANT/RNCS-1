@@ -62,6 +62,9 @@ export async function GET() {
         notes: rncs.notes,
         responseOwner: rncs.responseOwner,
         analysisOwner: rncs.analysisOwner,
+        fieldSources: rncs.fieldSources,
+        manualFields: rncs.manualFields,
+        sourceSummary: rncs.sourceSummary,
         updatedAt: rncs.updatedAt,
       }).from(rncs).innerJoin(works, eq(rncs.workId, works.id)).orderBy(desc(rncs.year), desc(rncs.id)),
     ]);
@@ -92,6 +95,17 @@ export async function POST(request: Request) {
       notes: String(body.notes || ""),
       responseOwner: String(body.responseOwner || ""),
       analysisOwner: String(body.analysisOwner || ""),
+      sentAt: body.sentAt ? String(body.sentAt) : null,
+      returnedAt: body.returnedAt ? String(body.returnedAt) : null,
+      fieldSources: JSON.stringify({
+        workId: "Preenchido manualmente", number: "Preenchido manualmente", year: "Preenchido manualmente",
+        description: "Preenchido manualmente", type: "Preenchido manualmente",
+        receivedAt: "Preenchido manualmente", sentAt: body.sentAt ? "Preenchido manualmente" : undefined,
+        returnedAt: body.returnedAt ? "Preenchido manualmente" : undefined,
+        status: "Preenchido manualmente", notes: "Preenchido manualmente",
+        responseOwner: "Preenchido manualmente", analysisOwner: "Preenchido manualmente",
+      }),
+      manualFields: JSON.stringify(["workId", "description", "type", "notes", "responseOwner", "analysisOwner"]),
     }).returning();
     await db.insert(auditLog).values({ rncId: created.id, field: "registro", newValue: "RNC criada manualmente" });
     return Response.json({ rnc: created }, { status: 201 });
@@ -113,6 +127,8 @@ export async function PATCH(request: Request) {
 
     const changes: Record<string, string | number | null> = {};
     const auditRows: Array<typeof auditLog.$inferInsert> = [];
+    const manualFields = new Set<string>(JSON.parse(current.manualFields || "[]"));
+    const fieldSources = JSON.parse(current.fieldSources || "{}") as Record<string, string>;
     for (const field of editableFields) {
       if (!(field in body)) continue;
       let next: string | number | null = body[field] === "" ? null : body[field] as string | number | null;
@@ -121,11 +137,15 @@ export async function PATCH(request: Request) {
       const previous = current[field];
       if (String(previous ?? "") !== String(next ?? "")) {
         changes[field] = next;
+        manualFields.add(field);
+        fieldSources[field] = "Preenchido manualmente";
         auditRows.push({ rncId: id, field, oldValue: String(previous ?? ""), newValue: String(next ?? "") });
       }
     }
     if ("receivedAt" in changes && changes.receivedAt) changes.dueAt = addBusinessDays(String(changes.receivedAt));
     if (!Object.keys(changes).length) return Response.json({ rnc: current });
+    changes.manualFields = JSON.stringify([...manualFields]);
+    changes.fieldSources = JSON.stringify(fieldSources);
     changes.updatedAt = new Date().toISOString();
     const [updated] = await db.update(rncs).set(changes).where(and(eq(rncs.id, id))).returning();
     if (auditRows.length) await db.insert(auditLog).values(auditRows);
