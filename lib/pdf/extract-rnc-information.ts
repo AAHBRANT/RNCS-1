@@ -33,30 +33,74 @@ function cleanResponsibleName(value: string) {
     .trim()
     .replace(/[.,:;-]+$/, "");
   if (cleaned.length < 3 || cleaned.length > 100) return null;
-  if (/^(DATA|PRAZO|RNC|STATUS|DESCRIÇÃO|DESCRICAO|ASSINATURA|NÃO IDENTIFICADO|NAO IDENTIFICADO)$/i.test(cleaned)) return null;
+  if (/^(DATA|PRAZO|RNC|STATUS|DESCRIÇÃO|DESCRICAO|ASSINATURA|NÃO IDENTIFICADO|NAO IDENTIFICADO|RESPONS[ÁA]VEL.*|CONTRATO.*)$/i.test(cleaned)) return null;
   return cleaned;
 }
 
-function extractResponsible(text: string): {
-  value: string | null;
-  confidence: ExtractionConfidence;
-} {
+function extractInspectionPeople(text: string) {
   const lines = normalizePdfText(text).split("\n").map((line) => line.trim()).filter(Boolean);
-  const inlinePatterns = [
-    /RESPONS[ÁA]VEL\s+DA\s+[ÁA]REA\s+INSPECIONADA\s*:?\s*(.+)$/i,
-  ];
+  const areaSource = String.raw`RESPONS[ÁA]VEL\s+DA\s+[ÁA]REA\s+INSPECIONADA`;
+  const fiscalSource = String.raw`RESPONS[ÁA]VEL\s+FISCAL\s+PELA\s+INSPE[CÇ][ÃA]O`;
+  const areaLabel = new RegExp(`^${areaSource}\\s*:?\\s*$`, "i");
+  const fiscalLabel = new RegExp(`^${fiscalSource}\\s*:?\\s*$`, "i");
+  const areaInline = new RegExp(`${areaSource}\\s*:?\\s*(.+?)(?=${fiscalSource}|$)`, "i");
+  const fiscalInline = new RegExp(`${fiscalSource}\\s*:?\\s*(.+)$`, "i");
+  let responsible: string | null = null;
+  let inspectionResponsible: string | null = null;
+  let responsibleConfidence: ExtractionConfidence = "LOW";
+  let inspectionConfidence: ExtractionConfidence = "LOW";
+
   for (const line of lines) {
-    for (const pattern of inlinePatterns) {
-      const match = line.match(pattern);
-      const value = match?.[1] ? cleanResponsibleName(match[1]) : null;
-      if (value) return { value, confidence: "HIGH" };
+    const areaMatch = line.match(areaInline);
+    const areaValue = areaMatch?.[1] ? cleanResponsibleName(areaMatch[1]) : null;
+    if (areaValue) { responsible = areaValue; responsibleConfidence = "HIGH"; }
+    const fiscalMatch = line.match(fiscalInline);
+    const fiscalValue = fiscalMatch?.[1] ? cleanResponsibleName(fiscalMatch[1]) : null;
+    if (fiscalValue) { inspectionResponsible = fiscalValue; inspectionConfidence = "HIGH"; }
+  }
+
+  const areaIndex = lines.findIndex((line) => areaLabel.test(line));
+  const fiscalIndex = lines.findIndex((line) => fiscalLabel.test(line));
+  if (areaIndex >= 0 && fiscalIndex === areaIndex + 1) {
+    const candidates = lines.slice(fiscalIndex + 1)
+      .map(cleanResponsibleName)
+      .filter((value): value is string => Boolean(value));
+    if (!responsible && candidates[0]) { responsible = candidates[0]; responsibleConfidence = "MEDIUM"; }
+    if (!inspectionResponsible && candidates[1]) {
+      inspectionResponsible = candidates[1];
+      inspectionConfidence = "MEDIUM";
+    }
+  } else {
+    if (!responsible && areaIndex >= 0) {
+      const value = cleanResponsibleName(lines[areaIndex + 1] || "");
+      if (value) { responsible = value; responsibleConfidence = "MEDIUM"; }
+    }
+    if (!inspectionResponsible && fiscalIndex >= 0) {
+      const value = cleanResponsibleName(lines[fiscalIndex + 1] || "");
+      if (value) { inspectionResponsible = value; inspectionConfidence = "MEDIUM"; }
     }
   }
-  const label = /^RESPONS[ÁA]VEL\s+DA\s+[ÁA]REA\s+INSPECIONADA\s*:?\s*$/i;
-  for (let index = 0; index < lines.length - 1; index += 1) {
-    if (!label.test(lines[index])) continue;
-    const value = cleanResponsibleName(lines[index + 1]);
-    if (value) return { value, confidence: "MEDIUM" };
+  return {
+    responsible: { value: responsible, confidence: responsibleConfidence },
+    inspectionResponsible: { value: inspectionResponsible, confidence: inspectionConfidence },
+  };
+}
+
+function extractContract(text: string): { value: string | null; confidence: ExtractionConfidence } {
+  const lines = normalizePdfText(text).split("\n").map((line) => line.trim()).filter(Boolean);
+  for (const line of lines) {
+    const match = line.match(/\bCONTRATO\s*:?\s*(.+)$/i);
+    const value = match?.[1]?.trim().replace(/[|;]+.*$/, "").replace(/[.,:;-]+$/, "");
+    if (value && value.length <= 150 && !/^RESPONS[ÁA]VEL/i.test(value)) {
+      return { value, confidence: "HIGH" };
+    }
+  }
+  const index = lines.findIndex((line) => /^CONTRATO\s*:?\s*$/i.test(line));
+  if (index >= 0) {
+    const value = lines[index + 1]?.trim();
+    if (value && value.length <= 150 && !/^RESPONS[ÁA]VEL/i.test(value)) {
+      return { value, confidence: "MEDIUM" };
+    }
   }
   return { value: null, confidence: "LOW" };
 }
@@ -122,13 +166,16 @@ function extractAnalysisStatus(text: string): {
 
 export function extractRncInformation(rawText: string): ExtractedRncInformation {
   const rnc = extractRncNumber(rawText);
-  const responsible = extractResponsible(rawText);
+  const people = extractInspectionPeople(rawText);
+  const contract = extractContract(rawText);
   const analysisReviewer = extractAnalysisReviewer(rawText);
   const analysis = extractAnalysisStatus(rawText);
   return {
     rncNumber: rnc.number,
     year: rnc.year,
-    responsible: responsible.value,
+    responsible: people.responsible.value,
+    inspectionResponsible: people.inspectionResponsible.value,
+    contract: contract.value,
     analysisReviewer: analysisReviewer.value,
     analysisStatus: analysis.status,
     matchedStatusText: analysis.matchedText,
@@ -136,7 +183,9 @@ export function extractRncInformation(rawText: string): ExtractedRncInformation 
     extractionMethod: "PDF_TEXT",
     confidence: {
       rncNumber: rnc.confidence,
-      responsible: responsible.confidence,
+      responsible: people.responsible.confidence,
+      inspectionResponsible: people.inspectionResponsible.confidence,
+      contract: contract.confidence,
       analysisReviewer: analysisReviewer.confidence,
       analysisStatus: analysis.confidence,
     },

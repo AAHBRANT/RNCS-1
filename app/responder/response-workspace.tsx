@@ -9,7 +9,8 @@ type RncListItem = {
 };
 type RncDetail = RncListItem & {
   workName: string; type: string; receivedAt: string | null; dueAt: string | null;
-  sentAt: string | null; returnedAt: string | null; responseOwner: string; analysisOwner: string;
+  sentAt: string | null; returnedAt: string | null; responseOwner: string;
+  inspectionOwner: string; contract: string; analysisOwner: string;
 };
 type EmailEvent = {
   id: number; subject: string | null; eventType: string; occurredAt: string;
@@ -24,7 +25,7 @@ type Draft = {
   evidence: string; conclusion: string; agentResponse: string; emailBody: string;
   locationFront: string; contract: string; observations: string;
   photoLegend1: string; photoLegend2: string; photoLegend3: string; photoLegend4: string;
-  selectedAttachments: string; status: string; updatedAt?: string;
+  internalComment: string; selectedAttachments: string; status: string; updatedAt?: string;
   updatedBy?: string;
 };
 type Version = { id: number; version: number; snapshot: string; createdAt: string; createdBy?: string };
@@ -38,6 +39,7 @@ const emptyDraft: Draft = {
   evidence: "", conclusion: "", agentResponse: "", emailBody: "",
   locationFront: "", contract: "", observations: "",
   photoLegend1: "", photoLegend2: "", photoLegend3: "", photoLegend4: "",
+  internalComment: "",
   selectedAttachments: "[]", status: "Rascunho",
 };
 
@@ -70,6 +72,7 @@ export function ResponseWorkspace() {
   const [photos, setPhotos] = useState<Array<File | null>>([null, null, null, null]);
   const [previewDocument, setPreviewDocument] = useState<WordDocument | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const [previewZoom, setPreviewZoom] = useState(80);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [selectedAttachments, setSelectedAttachments] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -178,21 +181,18 @@ export function ResponseWorkspace() {
       `Recebimento: ${formatDate(rnc.receivedAt)}`,
       `Prazo: ${formatDate(rnc.dueAt)}`,
       `Responsável da área inspecionada: ${rnc.responseOwner || "Não identificado"}`,
+      `Responsável fiscal pela inspeção: ${rnc.inspectionOwner || "Não identificado"}`,
+      `Contrato: ${rnc.contract || "Não identificado"}`,
       `Status atual: ${rnc.status}`,
-      `Diretriz: ${draft.directive || "Não informada"}`,
-      `Análise preliminar: ${draft.analysis || "Não informada"}`,
-      `Providências executadas: ${draft.actionsTaken || "Não informadas"}`,
-      `Evidências: ${draft.evidence || "Não informadas"}`,
+      `Análise da ocorrência: ${draft.analysis || "Ainda não preenchida"}`,
+      `Medidas corretivas: ${draft.actionsTaken || "Ainda não preenchidas"}`,
+      `Observações: ${draft.observations || "Sem observações"}`,
       selected.length ? `Documentos selecionados:\n${attachmentText}` : "Documentos selecionados: nenhum",
       "Elabore uma minuta técnica para revisão, sem enviar e-mail e sem inventar informações ausentes.",
     ].join("\n\n");
   }
 
   async function copyContext() {
-    if (!draft.directive.trim()) {
-      setNotice("Preencha a diretriz antes de copiar as informações.");
-      return;
-    }
     await navigator.clipboard.writeText(contextForAgent());
     setNotice("Contexto copiado. Abra o agente e cole as informações.");
   }
@@ -329,7 +329,9 @@ export function ResponseWorkspace() {
             <div><dt>Tipo</dt><dd>{rnc.type}</dd></div>
             <div><dt>Recebimento</dt><dd>{formatDate(rnc.receivedAt)}</dd></div>
             <div><dt>Prazo</dt><dd>{formatDate(rnc.dueAt)}</dd></div>
-            <div><dt>Resp. pela resposta</dt><dd>{rnc.responseOwner || "Não identificado"}</dd></div>
+            <div><dt>Responsável da área inspecionada</dt><dd>{rnc.responseOwner || "Não identificado"}</dd></div>
+            <div><dt>Responsável fiscal pela inspeção</dt><dd>{rnc.inspectionOwner || "Não identificado"}</dd></div>
+            <div><dt>Contrato</dt><dd>{rnc.contract || "Não identificado"}</dd></div>
             <div><dt>Envio anterior</dt><dd>{formatDate(rnc.sentAt)}</dd></div>
           </dl>
           <h3>Documentos do dossiê</h3>
@@ -353,20 +355,20 @@ export function ResponseWorkspace() {
             </label>
             <span>{draft.updatedAt ? `Último salvamento: ${formatDate(draft.updatedAt)}${draft.updatedBy ? ` · ${draft.updatedBy}` : ""}` : "Ainda não salvo"}</span>
           </div>
-          <EditorField title="Diretriz para elaboração da resposta" value={draft.directive} onChange={(value) => update("directive", value)} required placeholder="Informe o que foi executado, documentos e evidências, justificativas e o posicionamento a adotar." />
-          <div className="editor-grid">
-            <EditorField title="Análise da não conformidade" value={draft.analysis} onChange={(value) => update("analysis", value)} />
-            <EditorField title="Providências executadas" value={draft.actionsTaken} onChange={(value) => update("actionsTaken", value)} />
-            <EditorField title="Evidências" value={draft.evidence} onChange={(value) => update("evidence", value)} />
-            <EditorField title="Conclusão" value={draft.conclusion} onChange={(value) => update("conclusion", value)} />
-          </div>
+          <section className="automatic-template-fields">
+            <div><span>RNC Nº</span><strong>{rnc.number}/{rnc.year}</strong></div>
+            <div><span>Data da emissão da RNC</span><strong>{formatDate(rnc.receivedAt)}</strong><small>Data do e-mail oficial recebido</small></div>
+            <div><span>Data da emissão da tratativa</span><strong>{formatDate(new Date().toISOString())}</strong><small>Data de hoje</small></div>
+            <div><span>Local / frente</span><strong>{rnc.workName}</strong></div>
+            <div><span>Contrato</span><strong>{rnc.contract || "Não identificado no PDF"}</strong></div>
+            <div><span>Responsável da área inspecionada</span><strong>{rnc.responseOwner || "Não identificado no PDF"}</strong></div>
+            <div><span>Responsável fiscal pela inspeção</span><strong>{rnc.inspectionOwner || "Não identificado no PDF"}</strong></div>
+          </section>
+          <EditorField title="Análise da ocorrência" value={draft.analysis} onChange={(value) => update("analysis", value)} rows={8} required />
+          <EditorField title="Medidas corretivas" value={draft.actionsTaken} onChange={(value) => update("actionsTaken", value)} rows={8} required />
+          <EditorField title="Observações (se houver)" value={draft.observations} onChange={(value) => update("observations", value)} rows={5} />
           <section className="template-fields">
-            <div><strong>Campos do modelo Word</strong><p>Estas informações substituem automaticamente os campos entre colchetes do modelo.</p></div>
-            <div className="editor-grid">
-              <EditorField title="Local / frente de serviço" value={draft.locationFront} onChange={(value) => update("locationFront", value)} rows={3} />
-              <EditorField title="Contrato" value={draft.contract} onChange={(value) => update("contract", value)} rows={3} />
-            </div>
-            <EditorField title="Observações da tratativa" value={draft.observations} onChange={(value) => update("observations", value)} rows={4} />
+            <div><strong>Registro fotográfico da ação corretiva</strong><p>As fotografias e legendas serão inseridas no modelo Word.</p></div>
             <div className="photo-grid">
               {[0, 1, 2, 3].map((index) => {
                 const legendField = `photoLegend${index + 1}` as keyof Draft;
@@ -376,17 +378,8 @@ export function ResponseWorkspace() {
                 </div>;
               })}
             </div>
-            <small className="template-note">O número, ano, data de emissão, descrição e responsável são preenchidos com os dados já cadastrados na RNC. Fotos: PNG ou JPEG, até 800 KB cada.</small>
+            <small className="template-note">Fotos: PNG ou JPEG, até 800 KB cada.</small>
           </section>
-          <div className="agent-transfer">
-            <div><strong>Usar o agente de RNC</strong><p>Copie o contexto, abra o agente e cole a resposta produzida no campo abaixo.</p></div>
-            <div className="form-actions">
-              <button className="button secondary" type="button" onClick={copyContext}>Copiar contexto</button>
-              <a className="button primary link-button" href="https://chatgpt.com/g/g-6a0c7aace1708191ade1c78cfc4f70e8-relatorios-tecnicos-assistente" target="_blank" rel="noreferrer">Abrir agente</a>
-            </div>
-          </div>
-          <EditorField title="Resposta produzida pelo agente" value={draft.agentResponse} onChange={(value) => update("agentResponse", value)} rows={12} placeholder="Cole aqui a resposta gerada para revisar e manter no histórico." />
-          <EditorField title="Resposta técnica final" value={draft.technicalResponse} onChange={(value) => update("technicalResponse", value)} rows={10} />
           <section className="word-document-panel">
             <div>
               <strong>Documento Word final</strong>
@@ -415,8 +408,15 @@ export function ResponseWorkspace() {
               </div>) : <p className="muted">Nenhum documento Word anexado. O documento é obrigatório para a aprovação.</p>}
             </div>
           </section>
-          <EditorField title="Texto sugerido para o e-mail" value={draft.emailBody} onChange={(value) => update("emailBody", value)} rows={5} placeholder={`Prezados,\n\nEncaminhamos a resposta à RNC nº ${rnc.number}/${rnc.year} para análise.`} />
+          <EditorField title="Comentário interno — não será incluído no Word" value={draft.internalComment} onChange={(value) => update("internalComment", value)} rows={5} placeholder="Registre orientações, pendências ou comentários para o elaborador e o revisor." />
           <div className="save-bar"><span>Cada salvamento cria uma versão auditável.</span><button className="button primary" disabled={busy} onClick={saveDraft}>{busy ? "Salvando…" : "Salvar nova versão"}</button></div>
+          <div className="agent-transfer">
+            <div><strong>Usar o agente de RNC</strong><p>Copie os dados e documentos selecionados, abra o agente e utilize o conteúdo produzido para preencher os três campos técnicos acima.</p></div>
+            <div className="form-actions">
+              <button className="button secondary" type="button" onClick={copyContext}>Copiar contexto</button>
+              <a className="button primary link-button" href="https://chatgpt.com/g/g-6a0c7aace1708191ade1c78cfc4f70e8-relatorios-tecnicos-assistente" target="_blank" rel="noreferrer">Abrir agente</a>
+            </div>
+          </div>
         </div>
 
         <aside className="version-panel">
@@ -432,12 +432,18 @@ export function ResponseWorkspace() {
           <header>
             <div><strong>{previewDocument.fileName}</strong><small>Versão {previewDocument.version} · visualização para conferência</small></div>
             <div className="word-actions">
+              <label className="preview-zoom">Zoom
+                <select value={previewZoom} onChange={(event) => setPreviewZoom(Number(event.target.value))}>
+                  <option value={60}>60%</option><option value={70}>70%</option><option value={80}>80%</option>
+                  <option value={90}>90%</option><option value={100}>100%</option><option value={110}>110%</option>
+                </select>
+              </label>
               <a className="button secondary link-button" href={`/api/rncs/${rnc.id}/response/document?document=${previewDocument.id}`}>Baixar Word</a>
               <button className="button primary" type="button" onClick={() => setPreviewDocument(null)}>Fechar</button>
             </div>
           </header>
           {previewing && <div className="document-preview-loading">Preparando visualização do Word…</div>}
-          <div ref={previewContainer} className="document-preview-content" />
+          <div className="document-preview-content"><div ref={previewContainer} style={{ zoom: `${previewZoom}%` }} /></div>
           <footer>A visualização pode apresentar pequenas diferenças em relação ao Microsoft Word. O arquivo original não é alterado.</footer>
         </section>
       </div>}

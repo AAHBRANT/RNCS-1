@@ -63,6 +63,8 @@ async function initializeDatabaseOnce() {
     status TEXT NOT NULL DEFAULT 'Recebida',
     notes TEXT NOT NULL DEFAULT '',
     response_owner TEXT NOT NULL DEFAULT '',
+    inspection_owner TEXT NOT NULL DEFAULT '',
+    contract TEXT NOT NULL DEFAULT '',
     analysis_owner TEXT NOT NULL DEFAULT '',
     field_sources TEXT NOT NULL DEFAULT '{}',
     field_confidence TEXT NOT NULL DEFAULT '{}',
@@ -76,6 +78,8 @@ async function initializeDatabaseOnce() {
   await sql`ALTER TABLE rncs ADD COLUMN IF NOT EXISTS field_confidence TEXT NOT NULL DEFAULT '{}'`;
   await sql`ALTER TABLE rncs ADD COLUMN IF NOT EXISTS manual_fields TEXT NOT NULL DEFAULT '[]'`;
   await sql`ALTER TABLE rncs ADD COLUMN IF NOT EXISTS source_summary TEXT NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE rncs ADD COLUMN IF NOT EXISTS inspection_owner TEXT NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE rncs ADD COLUMN IF NOT EXISTS contract TEXT NOT NULL DEFAULT ''`;
   await sql`ALTER TABLE rncs ALTER COLUMN received_at DROP NOT NULL`;
   await sql`ALTER TABLE rncs ALTER COLUMN due_at DROP NOT NULL`;
   await sql`CREATE INDEX IF NOT EXISTS rncs_status_idx ON rncs(status)`;
@@ -196,6 +200,7 @@ async function initializeDatabaseOnce() {
   await sql`ALTER TABLE rnc_response_drafts ADD COLUMN IF NOT EXISTS photo_legend_2 TEXT NOT NULL DEFAULT ''`;
   await sql`ALTER TABLE rnc_response_drafts ADD COLUMN IF NOT EXISTS photo_legend_3 TEXT NOT NULL DEFAULT ''`;
   await sql`ALTER TABLE rnc_response_drafts ADD COLUMN IF NOT EXISTS photo_legend_4 TEXT NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE rnc_response_drafts ADD COLUMN IF NOT EXISTS internal_comment TEXT NOT NULL DEFAULT ''`;
   await sql`ALTER TABLE rnc_response_versions ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT ''`;
   await sql`CREATE TABLE IF NOT EXISTS rnc_response_documents (
     id SERIAL PRIMARY KEY,
@@ -227,6 +232,11 @@ async function initializeDatabaseOnce() {
     window_start TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMPTZ NOT NULL
   )`;
+  await sql`UPDATE rncs SET
+    response_owner = 'ISABELLA MARQUES',
+    inspection_owner = 'MARIANA LÍVIA DE MELO',
+    updated_at = CURRENT_TIMESTAMP
+    WHERE number = '268' AND year = 2026`;
   await sql`INSERT INTO access_users (name, email, role, allowed_types, can_view_all, active)
     VALUES
       ('Isabella Marques', 'isabella.marques@aahbrant.com', 'admin', '["*"]', TRUE, TRUE),

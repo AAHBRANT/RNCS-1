@@ -350,6 +350,8 @@ function attachmentAuditMetadata(attachments: AttachmentInfo[]) {
       identifiedRncNumber: processing?.information?.rncNumber || null,
       identifiedYear: processing?.information?.year || null,
       identifiedResponsible: processing?.information?.responsible || null,
+      identifiedInspectionResponsible: processing?.information?.inspectionResponsible || null,
+      identifiedContract: processing?.information?.contract || null,
       identifiedAnalysisReviewer: processing?.information?.analysisReviewer || null,
       identifiedStatus: processing?.information?.analysisStatus || null,
       matchedStatusText: processing?.information?.matchedStatusText || null,
@@ -464,6 +466,12 @@ async function processMessage(
       .map((information) => information.responsible)
       .filter((value): value is string => Boolean(value));
     const owners = [...new Set(pdfOwners.length ? pdfOwners : extractOwners(documentText))];
+    const inspectionOwners = [...new Set(pdfInformation.matching
+      .map((information) => information.inspectionResponsible)
+      .filter((value): value is string => Boolean(value)))];
+    const contracts = [...new Set(pdfInformation.matching
+      .map((information) => information.contract)
+      .filter((value): value is string => Boolean(value)))];
     const pdfAnalysisReviewers = pdfInformation.matching
       .map((information) => information.analysisReviewer)
       .filter((value): value is string => Boolean(value));
@@ -483,12 +491,16 @@ async function processMessage(
         description: description || "Descrição não identificada",
         type: classifyType(`${description}\n${combined}`), receivedAt: occurredDate,
         dueAt: addBusinessDays(occurredDate), status: "Recebida", responseOwner: owner,
+        inspectionOwner: inspectionOwners.length === 1 ? inspectionOwners[0] : "",
+        contract: contracts.length === 1 ? contracts[0] : "",
         analysisOwner: analysisReviewers.length === 1 ? analysisReviewers[0] : "",
         fieldSources: JSON.stringify({
           workId: "Identificado no e-mail recebido", number: "Identificado no e-mail recebido",
           year: "Identificado no e-mail recebido", description: description ? "Identificado no documento" : "Não identificado",
           type: "Identificado no documento", receivedAt: "Identificado no e-mail recebido",
           responseOwner: owners.length === 1 ? "Extraído do documento" : "Não identificado",
+          inspectionOwner: inspectionOwners.length === 1 ? "Extraído do documento" : "Não identificado",
+          contract: contracts.length === 1 ? "Extraído do documento" : "Não identificado",
           analysisOwner: analysisReviewers.length === 1 ? "Extraído do documento da RNC" : "Não identificado",
         }),
         fieldConfidence: JSON.stringify({
@@ -496,6 +508,8 @@ async function processMessage(
           description: { score: description ? 5 : 1, reason: description ? "Descrição extraída do nome do documento original." : "Descrição não localizada." },
           type: { score: description ? 4 : 1, reason: "Classificação baseada no documento original." },
           responseOwner: { score: owners.length === 1 ? 5 : 1, reason: owners.length === 1 ? "Nome extraído do documento original da RNC." : "Responsável não localizado no documento." },
+          inspectionOwner: { score: inspectionOwners.length === 1 ? 5 : 1, reason: inspectionOwners.length === 1 ? "Fiscal extraído do campo 'Responsável Fiscal pela Inspeção'." : "Fiscal da inspeção não localizado." },
+          contract: { score: contracts.length === 1 ? 5 : 1, reason: contracts.length === 1 ? "Contrato extraído do PDF original da RNC." : "Contrato não localizado." },
           analysisOwner: { score: analysisReviewers.length === 1 ? 5 : 1, reason: analysisReviewers.length === 1 ? "Revisor extraído do campo 'Revisor da Elaboração do RNC'." : "Revisor não localizado no documento." },
         }),
         sourceSummary: `Mensagem oficial recebida em ${occurredAt}`,
@@ -503,6 +517,8 @@ async function processMessage(
       stats.newRncs++;
       if (owners.length === 1) stats.ownersIdentified++;
       await recordConflict(rnc.id, "responseOwner", owners);
+      await recordConflict(rnc.id, "inspectionOwner", inspectionOwners);
+      await recordConflict(rnc.id, "contract", contracts);
       await recordConflict(rnc.id, "analysisOwner", analysisReviewers);
     } else {
       const [alreadyImported] = await db.select({ id: emailEvents.id }).from(emailEvents)
@@ -534,6 +550,30 @@ async function processMessage(
         } else if (owners.length > 1) {
           await recordConflict(rnc.id, "responseOwner", owners);
           if (canAutoUpdate(rnc, "responseOwner")) changes.responseOwner = "Não identificado";
+        }
+        if (inspectionOwners.length === 1 && canAutoUpdate(rnc, "inspectionOwner")) {
+          changes.inspectionOwner = inspectionOwners[0];
+          sources.inspectionOwner = "Extraído do documento";
+          const information = pdfInformation.matching.find(
+            (item) => item.inspectionResponsible === inspectionOwners[0],
+          );
+          confidence.inspectionOwner = {
+            score: information ? confidenceScore(information.confidence.inspectionResponsible) : 4,
+            reason: "Nome imediatamente abaixo do campo 'Responsável Fiscal pela Inspeção'.",
+          };
+        } else if (inspectionOwners.length > 1) {
+          await recordConflict(rnc.id, "inspectionOwner", inspectionOwners);
+        }
+        if (contracts.length === 1 && canAutoUpdate(rnc, "contract")) {
+          changes.contract = contracts[0];
+          sources.contract = "Extraído do documento";
+          const information = pdfInformation.matching.find((item) => item.contract === contracts[0]);
+          confidence.contract = {
+            score: information ? confidenceScore(information.confidence.contract) : 4,
+            reason: "Contrato extraído do PDF original da RNC.",
+          };
+        } else if (contracts.length > 1) {
+          await recordConflict(rnc.id, "contract", contracts);
         }
         if (analysisReviewers.length === 1 && canAutoUpdate(rnc, "analysisOwner")) {
           changes.analysisOwner = analysisReviewers[0];

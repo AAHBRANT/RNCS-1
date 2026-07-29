@@ -8,7 +8,7 @@ const ONLY_WORK = "Parque Socioambiental do Roger – Fase II";
 
 const editableFields = [
   "workId", "number", "year", "description", "type", "receivedAt", "dueAt",
-  "sentAt", "returnedAt", "status", "notes", "responseOwner", "analysisOwner",
+  "sentAt", "returnedAt", "status", "notes", "responseOwner", "inspectionOwner", "contract", "analysisOwner",
 ] as const;
 
 function addBusinessDays(dateValue: string, days = 5) {
@@ -50,6 +50,8 @@ export async function GET(request: Request) {
         status: rncs.status,
         notes: rncs.notes,
         responseOwner: rncs.responseOwner,
+        inspectionOwner: rncs.inspectionOwner,
+        contract: rncs.contract,
         analysisOwner: rncs.analysisOwner,
         fieldSources: rncs.fieldSources,
         fieldConfidence: rncs.fieldConfidence,
@@ -99,6 +101,8 @@ export async function POST(request: Request) {
       status: String(body.status || "Recebida"),
       notes: String(body.notes || ""),
       responseOwner: String(body.responseOwner || ""),
+      inspectionOwner: String(body.inspectionOwner || ""),
+      contract: String(body.contract || ""),
       analysisOwner: String(body.analysisOwner || ""),
       sentAt: body.sentAt ? String(body.sentAt) : null,
       returnedAt: body.returnedAt ? String(body.returnedAt) : null,
@@ -122,7 +126,7 @@ export async function POST(request: Request) {
         responseOwner: "Preenchido manualmente", analysisOwner: "Preenchido manualmente",
       }),
       fieldConfidence: JSON.stringify({}),
-      manualFields: JSON.stringify(outlookAudit ? [] : ["workId", "description", "type", "notes", "responseOwner", "analysisOwner"]),
+      manualFields: JSON.stringify(outlookAudit ? [] : ["workId", "description", "type", "notes", "responseOwner", "inspectionOwner", "contract", "analysisOwner"]),
       sourceSummary: outlookAudit ? "Importado após conferência das comunicações oficiais no Outlook." : "",
     }).returning();
     await db.insert(auditLog).values({

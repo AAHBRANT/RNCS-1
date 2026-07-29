@@ -34,6 +34,7 @@ const textFields = [
   "photoLegend2",
   "photoLegend3",
   "photoLegend4",
+  "internalComment",
 ] as const;
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -58,6 +59,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     returnedAt: rncs.returnedAt,
     status: rncs.status,
     responseOwner: rncs.responseOwner,
+    inspectionOwner: rncs.inspectionOwner,
+    contract: rncs.contract,
     analysisOwner: rncs.analysisOwner,
   }).from(rncs).innerJoin(works, eq(rncs.workId, works.id)).where(eq(rncs.id, rncId)).limit(1);
   if (!rnc) return Response.json({ error: "RNC não encontrada." }, { status: 404 });

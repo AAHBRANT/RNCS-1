@@ -59,6 +59,30 @@ test("identifica os responsáveis pelos campos exatos dos documentos", () => {
   );
 });
 
+test("separa o responsável da área e o fiscal da inspeção", () => {
+  const information = extractRncInformation([
+    "RESPONSÁVEL DA ÁREA INSPECIONADA:",
+    "ISABELLA MARQUES",
+    "RESPONSÁVEL FISCAL PELA INSPEÇÃO:",
+    "MARIANA LÍVIA DE MELO",
+    "CONTRATO: 123/2026",
+  ].join("\n"));
+  assert.equal(information.responsible, "ISABELLA MARQUES");
+  assert.equal(information.inspectionResponsible, "MARIANA LÍVIA DE MELO");
+  assert.equal(information.contract, "123/2026");
+});
+
+test("separa responsáveis quando o PDF extrai os dois rótulos antes dos nomes", () => {
+  const information = extractRncInformation([
+    "RESPONSÁVEL DA ÁREA INSPECIONADA:",
+    "RESPONSÁVEL FISCAL PELA INSPEÇÃO:",
+    "ISABELLA MARQUES",
+    "MARIANA LÍVIA DE MELO",
+  ].join("\n"));
+  assert.equal(information.responsible, "ISABELLA MARQUES");
+  assert.equal(information.inspectionResponsible, "MARIANA LÍVIA DE MELO");
+});
+
 test("mantém resultado inconclusivo quando faltam dados", () => {
   const result = extractRncInformation("Documento sem resultado conclusivo");
   assert.equal(result.responsible, null);

@@ -37,6 +37,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     type: rncs.type,
     receivedAt: rncs.receivedAt,
     responseOwner: rncs.responseOwner,
+    inspectionOwner: rncs.inspectionOwner,
+    contract: rncs.contract,
     workName: works.name,
   }).from(rncs).innerJoin(works, eq(rncs.workId, works.id))
     .where(eq(rncs.id, rncId)).limit(1);
@@ -76,20 +78,16 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     });
   }
 
-  const correctiveMeasures = [draft.actionsTaken, draft.technicalResponse]
-    .map((value) => String(value || "").trim())
-    .filter(Boolean)
-    .join("\n\n");
   const replacements = {
     "[NÚMERO_RNC]": `${rnc.number}/${rnc.year}`,
     "[DATA_EMISSÃO]": formatDate(rnc.receivedAt),
     "[DATA_HOJE]": new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo" }).format(new Date()),
-    "[LOCAL/ FRENTE]": String(draft.locationFront || ""),
-    "[CONTRATO]": String(draft.contract || ""),
+    "[LOCAL/ FRENTE]": rnc.workName,
+    "[CONTRATO]": rnc.contract || "Não identificado",
     "[RESPONSÁVEL PELA ÁREA]": rnc.responseOwner || "Não identificado",
-    "[DESCRIÇÃO_OCORRÊNCIA]": rnc.description,
-    "[MEDIDAS_CORRETIVAS]": correctiveMeasures,
-    "[OBSERVAÇÕES]": String(draft.observations || draft.conclusion || ""),
+    "[DESCRIÇÃO_OCORRÊNCIA]": String(draft.analysis || ""),
+    "[MEDIDAS_CORRETIVAS]": String(draft.actionsTaken || ""),
+    "[OBSERVAÇÕES]": String(draft.observations || ""),
     "[LEGENDA1]": String(draft.photoLegend1 || ""),
     "[LEGENDA2]": String(draft.photoLegend2 || ""),
     "[LEGENDA3]": String(draft.photoLegend3 || ""),

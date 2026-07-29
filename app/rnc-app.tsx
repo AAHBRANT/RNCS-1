@@ -8,7 +8,7 @@ type Rnc = {
   id: number; workId: number; workName: string; number: string; year: number;
   description: string; type: string; receivedAt: string | null; dueAt: string | null;
   sentAt: string | null; returnedAt: string | null; status: string; notes: string;
-  responseOwner: string; analysisOwner: string; updatedAt: string;
+  responseOwner: string; inspectionOwner: string; contract: string; analysisOwner: string; updatedAt: string;
   fieldSources: string; fieldConfidence: string; manualFields: string; sourceSummary: string;
 };
 type Audit = { id: number; field: string; oldValue: string | null; newValue: string | null; changedAt: string; userName: string };
@@ -36,6 +36,7 @@ const labelByField: Record<string, string> = {
   description: "Descrição", type: "Tipo", receivedAt: "Recebimento", dueAt: "Prazo",
   sentAt: "Envio", returnedAt: "Retorno", status: "Status", notes: "Observações",
   responseOwner: "Responsável pela resposta", analysisOwner: "Responsável pela análise",
+  inspectionOwner: "Responsável fiscal pela inspeção", contract: "Contrato",
 };
 
 function parseLocal(value: string) { return new Date(`${value}T12:00:00`); }
@@ -457,7 +458,7 @@ export function RncApp() {
         <div className="drawer-body">
           <span className={`status status-${selected.status.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replaceAll(" ", "-")}`}>{selected.status}</span>
           <h3>{selected.description}</h3>
-          <dl><div><dt>Tipo</dt><dd>{selected.type}</dd><small>{sourceFor(selected, "type")}</small><small className="confidence">{confidenceFor(selected, "type")}</small></div><div><dt>Recebimento</dt><dd>{fmt(selected.receivedAt)}</dd><small>{sourceFor(selected, "receivedAt")}</small><small className="confidence">{confidenceFor(selected, "receivedAt")}</small></div><div><dt>Prazo</dt><dd>{fmt(selected.dueAt)}</dd></div><div><dt>Envio</dt><dd>{fmt(selected.sentAt)}</dd><small>{sourceFor(selected, "sentAt")}</small><small className="confidence">{confidenceFor(selected, "sentAt")}</small></div><div><dt>Retorno</dt><dd>{fmt(selected.returnedAt)}</dd><small>{sourceFor(selected, "returnedAt")}</small><small className="confidence">{confidenceFor(selected, "returnedAt")}</small></div><div><dt>Status</dt><dd>{selected.status}</dd><small>{sourceFor(selected, "status")}</small><small className="confidence">{confidenceFor(selected, "status")}</small></div><div><dt>Resp. pela resposta</dt><dd>{selected.responseOwner || "Não identificado"}</dd><small>{sourceFor(selected, "responseOwner")}</small><small className="confidence">{confidenceFor(selected, "responseOwner")}</small></div><div><dt>Resp. pela análise</dt><dd>{selected.analysisOwner || "Não identificado"}</dd></div></dl>
+          <dl><div><dt>Tipo</dt><dd>{selected.type}</dd><small>{sourceFor(selected, "type")}</small><small className="confidence">{confidenceFor(selected, "type")}</small></div><div><dt>Recebimento</dt><dd>{fmt(selected.receivedAt)}</dd><small>{sourceFor(selected, "receivedAt")}</small><small className="confidence">{confidenceFor(selected, "receivedAt")}</small></div><div><dt>Prazo</dt><dd>{fmt(selected.dueAt)}</dd></div><div><dt>Envio</dt><dd>{fmt(selected.sentAt)}</dd><small>{sourceFor(selected, "sentAt")}</small><small className="confidence">{confidenceFor(selected, "sentAt")}</small></div><div><dt>Retorno</dt><dd>{fmt(selected.returnedAt)}</dd><small>{sourceFor(selected, "returnedAt")}</small><small className="confidence">{confidenceFor(selected, "returnedAt")}</small></div><div><dt>Status</dt><dd>{selected.status}</dd><small>{sourceFor(selected, "status")}</small><small className="confidence">{confidenceFor(selected, "status")}</small></div><div><dt>Responsável da área inspecionada</dt><dd>{selected.responseOwner || "Não identificado"}</dd><small>{sourceFor(selected, "responseOwner")}</small><small className="confidence">{confidenceFor(selected, "responseOwner")}</small></div><div><dt>Responsável fiscal pela inspeção</dt><dd>{selected.inspectionOwner || "Não identificado"}</dd><small>{sourceFor(selected, "inspectionOwner")}</small><small className="confidence">{confidenceFor(selected, "inspectionOwner")}</small></div><div><dt>Contrato</dt><dd>{selected.contract || "Não identificado"}</dd><small>{sourceFor(selected, "contract")}</small></div><div><dt>Resp. pela análise</dt><dd>{selected.analysisOwner || "Não identificado"}</dd></div></dl>
           {conflicts.some((item) => item.status === "open") && <section className="conflict"><strong>Informações divergentes encontradas</strong><p>Revise os dados candidatos e selecione manualmente o valor correto.</p>{conflicts.filter((item) => item.status === "open").map((item) => <small key={item.id}>{item.field}: {JSON.parse(item.candidateValues).join(" · ")}</small>)}</section>}
           <section className="notes"><h4>Observações internas</h4><p>{selected.notes || "Nenhuma observação registrada."}</p></section>
           <section className="timeline"><h4>Dossiê e histórico oficial de e-mails</h4>{emails.length ? emails.map((event) => <div className="timeline-item" key={`email-${event.id}`}><i /><div><strong>{event.eventType.replaceAll("_", " ")}</strong><p>{event.subject}</p><small>{fmt(event.occurredAt)} · {event.folderName || "Outlook"}</small><small>Vínculo {"★".repeat(event.associationConfidence || 0)}{"☆".repeat(5 - (event.associationConfidence || 0))}{event.conversationId ? " · Conversation ID confirmado" : ""}</small>
@@ -520,6 +521,8 @@ function RncForm({ works, rnc, onSubmit }: { works: Work[]; rnc?: Rnc; onSubmit:
     <label>Data de recebimento<input name="receivedAt" type="date" defaultValue={rnc?.receivedAt || today} required /></label>
     {rnc && <><label>Data do envio<input name="sentAt" type="date" defaultValue={rnc.sentAt || ""} /></label><label>Data do retorno<input name="returnedAt" type="date" defaultValue={rnc.returnedAt || ""} /></label></>}
     <label className={rnc ? "" : "span-2"}>Responsável pela resposta<input name="responseOwner" defaultValue={rnc?.responseOwner} placeholder="Nome do responsável" /></label>
+    <label>Responsável fiscal pela inspeção<input name="inspectionOwner" defaultValue={rnc?.inspectionOwner} placeholder="Nome do fiscal" /></label>
+    <label>Contrato<input name="contract" defaultValue={rnc?.contract} placeholder="Contrato identificado no PDF" /></label>
     <label className="span-2">Responsável pela análise<input name="analysisOwner" defaultValue={rnc?.analysisOwner} placeholder="Supervisão, UEP ou responsável" /></label>
     <label className="span-2">Observações<textarea name="notes" defaultValue={rnc?.notes} rows={3} placeholder="Comentários internos — preenchimento exclusivamente manual" /></label>
     <div className="form-actions span-2"><button className="button primary" type="submit">{rnc ? "Salvar alterações" : "Cadastrar RNC"}</button></div>
