@@ -26,6 +26,7 @@ h1 { margin:0; font-family:Georgia, "Times New Roman", serif; font-size:31px; fo
 .page-heading p:last-child { margin:8px 0 0; color:var(--muted); font-size:13px; }
 .export-actions button { padding:8px 12px; color:#4e5c55; }
 .metrics { max-width:1500px; margin:0 auto; padding:0 34px 26px; display:grid; grid-template-columns:repeat(9,1fr); gap:10px; }
+.metric-group-label{max-width:1500px;margin:0 auto 8px;padding:0 34px;color:#66736c;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em}.status-metrics{grid-template-columns:repeat(7,1fr);padding-bottom:18px}.deadline-metrics{grid-template-columns:repeat(3,minmax(150px,1fr))}
 .metric { min-width:0; background:#fff; border:1px solid var(--line); border-radius:12px; padding:15px 14px 12px; position:relative; overflow:hidden; box-shadow:0 2px 7px #17211c06; text-align:left; transition:.15s; }
 .metric:hover { transform:translateY(-1px); box-shadow:0 6px 18px #17211c12; }
 .metric.active { border-color:var(--green); box-shadow:0 0 0 2px #1f6f5025; background:#f8fcfa; }

@@ -248,6 +248,43 @@ function analysisStatus(documentText: string): { status: string; confidence: Con
   };
 }
 
+export function analysisStatusFromEmailBody(body: string): { status: string; confidence: Confidence } | null {
+  const source = normalize(body);
+  const rejected = [
+    /tratativa (?:foi )?(?:reprovada|nao aprovada|nao atendida|nao aceita)/,
+    /medidas nao atenderam ao solicitado/,
+    /providencias (?:tomadas )?nao estao em conformidade/,
+    /necessita (?:de )?correcao/,
+    /devera ser reenviad/,
+  ].some((pattern) => pattern.test(source));
+  if (rejected) {
+    return {
+      status: "Reprovada",
+      confidence: {
+        score: 4,
+        reason: "Resultado inequívoco identificado no corpo do e-mail oficial de análise; PDF sem resultado extraível.",
+      },
+    };
+  }
+  const approved = [
+    /aprovacao da tratativa/,
+    /tratativa (?:foi )?aprovada/,
+    /medidas atenderam ao solicitado/,
+    /providencias (?:tomadas )?estao em conformidade/,
+    /tratativa considerada atendida/,
+  ].some((pattern) => pattern.test(source));
+  if (approved) {
+    return {
+      status: "Aprovada",
+      confidence: {
+        score: 4,
+        reason: "Resultado inequívoco identificado no corpo do e-mail oficial de análise; PDF sem resultado extraível.",
+      },
+    };
+  }
+  return null;
+}
+
 function confidenceScore(value: "HIGH" | "MEDIUM" | "LOW") {
   return value === "HIGH" ? 5 : value === "MEDIUM" ? 3 : 1;
 }
@@ -477,7 +514,9 @@ async function processMessage(
                 status: "Retorno recebido — status a confirmar",
                 confidence: { score: 1, reason: "Documentos de análise apresentaram resultados divergentes." },
               }
-              : analysisStatus(documentText);
+              : analysisStatus(documentText).status !== "Retorno recebido — status a confirmar"
+                ? analysisStatus(documentText)
+                : analysisStatusFromEmailBody(body) || analysisStatus(documentText);
           changes.status = result.status; sources.status = "Extraído do documento de análise";
           confidence.status = result.confidence;
           stats.statusesUpdated++;

@@ -242,6 +242,7 @@ export function RncApp() {
       || (cardFilter === "approved" && r.status === "Aprovada")
       || (cardFilter === "rejected" && r.status === "Reprovada")
       || (cardFilter === "reopened" && r.status === "Reaberta")
+      || (cardFilter === "pendingReview" && r.status === "Retorno recebido — status a confirmar")
       || (cardFilter === "onTime" && deadline !== null && deadline <= 0)
       || (cardFilter === "overdue" && !hasBeenAnswered(r) && (deadline ?? 0) > 0)
       || (cardFilter === "answeredLate" && !!r.sentAt && (deadline ?? 0) > 0);
@@ -262,6 +263,7 @@ export function RncApp() {
     approved: rows.filter((r) => r.status === "Aprovada").length,
     rejected: rows.filter((r) => r.status === "Reprovada").length,
     reopened: rows.filter((r) => r.status === "Reaberta").length,
+    pendingReview: rows.filter((r) => r.status === "Retorno recebido — status a confirmar").length,
     onTime: rows.filter((r) =>
       (!hasBeenAnswered(r) && deadlineResult(r).delta !== null && deadlineResult(r).delta! <= 0)
       || (!!r.sentAt && deadlineResult(r).delta !== null && deadlineResult(r).delta! <= 0)
@@ -378,11 +380,18 @@ export function RncApp() {
         <div className="export-actions"><button onClick={exportExcel}>↓ Excel</button><button onClick={() => window.print()}>↓ PDF</button></div>
       </section>
 
-      <section className="metrics">
+      <p className="metric-group-label">Situação das RNCs — categorias exclusivas</p>
+      <section className="metrics status-metrics">
         {[
           ["Total de RNC", stats.total, "neutral", "all"], ["Recebidas", stats.received, "amber", "received"],
-          ["Respondidas", stats.answered, "blue", "answered"], ["Aprovadas", stats.approved, "green", "approved"],
+          ["Respondidas · aguardando análise", stats.answered, "blue", "answered"], ["Aprovadas", stats.approved, "green", "approved"],
           ["Reprovadas", stats.rejected, "red", "rejected"], ["Reabertas", stats.reopened, "violet", "reopened"],
+          ["Status a confirmar", stats.pendingReview, "orange", "pendingReview"],
+        ].map(([label, value, tone, filter]) => <button type="button" key={String(label)} aria-pressed={cardFilter === filter} onClick={() => setCardFilter((current) => current === filter ? "all" : String(filter))} className={`metric ${tone} ${cardFilter === filter ? "active" : ""}`}><span>{label}</span><strong>{value}</strong><div className="metric-line" /></button>)}
+      </section>
+      <p className="metric-group-label">Cumprimento do prazo — categorias exclusivas</p>
+      <section className="metrics deadline-metrics">
+        {[
           ["Dentro do prazo", stats.onTime, "teal", "onTime"], ["Vencidas", stats.overdue, "red", "overdue"],
           ["Respondidas com atraso", stats.answeredLate, "orange", "answeredLate"],
         ].map(([label, value, tone, filter]) => <button type="button" key={String(label)} aria-pressed={cardFilter === filter} onClick={() => setCardFilter((current) => current === filter ? "all" : String(filter))} className={`metric ${tone} ${cardFilter === filter ? "active" : ""}`}><span>{label}</span><strong>{value}</strong><div className="metric-line" /></button>)}
