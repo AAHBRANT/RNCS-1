@@ -10,7 +10,7 @@ function normalizeAnalysisText(value: string) {
 export function analysisStatusFromEmailBody(body: string): AnalysisResult | null {
   const source = normalizeAnalysisText(body);
   const rejected = [
-    /reprovacao da tratativa/,
+    /reprovac(?:ao|oes) d(?:a|as) tratativa(?:s)?/,
     /tratativa (?:foi )?(?:reprovada|nao aprovada|nao atendida|nao aceita)/,
     /medidas nao atenderam ao solicitado/,
     /providencias (?:tomadas )?nao estao em conformidade/,
@@ -27,7 +27,7 @@ export function analysisStatusFromEmailBody(body: string): AnalysisResult | null
     };
   }
   const approved = [
-    /aprovacao da tratativa/,
+    /aprovac(?:ao|oes) d(?:a|as) tratativa(?:s)?/,
     /tratativa (?:foi )?aprovada/,
     /medidas atenderam ao solicitado/,
     /providencias (?:tomadas )?estao em conformidade/,

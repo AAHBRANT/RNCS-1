@@ -89,3 +89,12 @@ test("não atribui resposta às RNCs apenas citadas no histórico", () => {
   );
   assert.deepEqual(result, [{ number: "146", year: 2026 }]);
 });
+
+test("classifica aprovacoes de varias tratativas pelo corpo do e-mail", () => {
+  assert.equal(
+    analysisStatusFromEmailBody(
+      "Apos verificacao, confirmou-se que as providencias tomadas pela empresa estao em conformidade com as solicitacoes dos RNCs 090/2025 e 091/2025. Desse modo, visto que as medidas atenderam ao solicitado, encaminhamos anexo as Analises de Tratativas de RNC referentes as aprovacoes das tratativas encaminhadas.",
+    )?.status,
+    "Aprovada",
+  );
+});
