@@ -262,8 +262,7 @@ async function attachmentsForMessage(accessToken: string, message: GraphMessage)
 function extractOwners(text: string) {
   const values = new Set<string>();
   for (const pattern of [
-    /respons[aá]vel\s+(?:pela\s+resposta|pela\s+tratativa|pela\s+elabora[cç][aã]o|t[eé]cnico)?\s*[:\-]?\s*([^\n\r;|]{3,100})/gi,
-    /(?:elaborado|preenchido)\s+por\s*[:\-]?\s*([^\n\r;|]{3,100})/gi,
+    /respons[aá]vel\s+da\s+[áa]rea\s+inspecionada\s*[:\-]?\s*([^\n\r;|]{3,100})/gi,
   ]) {
     for (const match of text.matchAll(pattern)) {
       const value = match[1].replace(/\s{2,}/g, " ").trim().replace(/[.,:;-]+$/, "");
@@ -272,6 +271,20 @@ function extractOwners(text: string) {
         && !/^(data|assinatura|empresa|cargo|fun[cç][aã]o|n[aã]o identificado)/i.test(value)
       ) values.add(value);
     }
+  }
+  return [...values];
+}
+
+function extractAnalysisReviewers(text: string) {
+  const values = new Set<string>();
+  for (const match of text.matchAll(
+    /revisor\s+da\s+elabora[cç][aã]o\s+da\s+an[aá]lise\s+da\s+tratativa\s*[:\-]?\s*([^\n\r;|]{3,100})/gi,
+  )) {
+    const value = match[1].replace(/\s{2,}/g, " ").trim().replace(/[.,:;-]+$/, "");
+    if (
+      value.length <= 100
+      && !/^(data|assinatura|empresa|cargo|fun[cç][aã]o|n[aã]o identificado)/i.test(value)
+    ) values.add(value);
   }
   return [...values];
 }
@@ -336,6 +349,7 @@ function attachmentAuditMetadata(attachments: AttachmentInfo[]) {
       identifiedRncNumber: processing?.information?.rncNumber || null,
       identifiedYear: processing?.information?.year || null,
       identifiedResponsible: processing?.information?.responsible || null,
+      identifiedAnalysisReviewer: processing?.information?.analysisReviewer || null,
       identifiedStatus: processing?.information?.analysisStatus || null,
       matchedStatusText: processing?.information?.matchedStatusText || null,
       confidence: processing?.information?.confidence || null,
@@ -449,6 +463,12 @@ async function processMessage(
       .map((information) => information.responsible)
       .filter((value): value is string => Boolean(value));
     const owners = [...new Set(pdfOwners.length ? pdfOwners : extractOwners(documentText))];
+    const pdfAnalysisReviewers = pdfInformation.matching
+      .map((information) => information.analysisReviewer)
+      .filter((value): value is string => Boolean(value));
+    const analysisReviewers = [...new Set(
+      pdfAnalysisReviewers.length ? pdfAnalysisReviewers : extractAnalysisReviewers(documentText),
+    )];
     if (rnc && pdfInformation.conflicts.length) {
       await recordConflict(rnc.id, "documentIdentity", [
         `RNC esperada ${identity.number}/${identity.year}`,
@@ -521,6 +541,21 @@ async function processMessage(
         }
       } else {
         stats.returnsProcessed++;
+        if (analysisReviewers.length === 1 && canAutoUpdate(rnc, "analysisOwner")) {
+          changes.analysisOwner = analysisReviewers[0];
+          sources.analysisOwner = "Extraído do documento de análise";
+          const reviewerInformation = pdfInformation.matching.find(
+            (item) => item.analysisReviewer === analysisReviewers[0],
+          );
+          confidence.analysisOwner = {
+            score: reviewerInformation
+              ? confidenceScore(reviewerInformation.confidence.analysisReviewer)
+              : 4,
+            reason: "Revisor extraído do campo 'Revisor da Elaboração da Análise da Tratativa'.",
+          };
+        } else if (analysisReviewers.length > 1) {
+          await recordConflict(rnc.id, "analysisOwner", analysisReviewers);
+        }
         if (canAutoUpdate(rnc, "returnedAt") && (!rnc.returnedAt || occurredDate >= rnc.returnedAt)) {
           changes.returnedAt = occurredDate; sources.returnedAt = "Identificado no e-mail recebido";
           confidence.returnedAt = { score: 5, reason: "Data do e-mail oficial de retorno da Supervisão." };

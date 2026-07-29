@@ -24,20 +24,37 @@ test("reprovação tem precedência sobre aprovação", () => {
   );
 });
 
-test("identifica responsável na mesma linha ou na linha seguinte", () => {
+test("identifica os responsáveis pelos campos exatos dos documentos", () => {
   assert.equal(
-    extractRncInformation("Responsável pela tratativa: Isabella Marques").responsible,
+    extractRncInformation("RESPONSÁVEL DA ÁREA INSPECIONADA: Isabella Marques").responsible,
     "Isabella Marques",
   );
   assert.equal(
-    extractRncInformation("Responsável pela tratativa\nIsabella Marques").responsible,
+    extractRncInformation("RESPONSÁVEL DA ÁREA INSPECIONADA\nIsabella Marques").responsible,
     "Isabella Marques",
+  );
+  assert.equal(
+    extractRncInformation(
+      "Revisor da Elaboração da Análise da Tratativa: Juliane Ataíde",
+    ).analysisReviewer,
+    "Juliane Ataíde",
+  );
+  assert.equal(
+    extractRncInformation(
+      "Revisor da Elaboração da Análise da Tratativa\nJuliane Ataíde",
+    ).analysisReviewer,
+    "Juliane Ataíde",
+  );
+  assert.equal(
+    extractRncInformation("Responsável pela tratativa: Nome incorreto").responsible,
+    null,
   );
 });
 
 test("mantém resultado inconclusivo quando faltam dados", () => {
   const result = extractRncInformation("Documento sem resultado conclusivo");
   assert.equal(result.responsible, null);
+  assert.equal(result.analysisReviewer, null);
   assert.equal(result.analysisStatus, "STATUS_A_CONFIRMAR");
 });
 

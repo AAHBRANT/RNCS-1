@@ -43,12 +43,7 @@ function extractResponsible(text: string): {
 } {
   const lines = normalizePdfText(text).split("\n").map((line) => line.trim()).filter(Boolean);
   const inlinePatterns = [
-    /RESPONS[ÁA]VEL\s+PELA\s+RESPOSTA\s*:?\s*(.+)$/i,
-    /RESPONS[ÁA]VEL\s+PELA\s+TRATATIVA\s*:?\s*(.+)$/i,
-    /RESPONS[ÁA]VEL\s+PELO\s+ATENDIMENTO\s*:?\s*(.+)$/i,
-    /RESPONS[ÁA]VEL\s+PELA\s+CORRE[ÇC][ÃA]O\s*:?\s*(.+)$/i,
-    /RESPONS[ÁA]VEL\s+(?:CONTRATADA|CONS[ÓO]RCIO)\s*:?\s*(.+)$/i,
-    /^RESPONS[ÁA]VEL\s*:?\s*(.+)$/i,
+    /RESPONS[ÁA]VEL\s+DA\s+[ÁA]REA\s+INSPECIONADA\s*:?\s*(.+)$/i,
   ];
   for (const line of lines) {
     for (const pattern of inlinePatterns) {
@@ -57,7 +52,27 @@ function extractResponsible(text: string): {
       if (value) return { value, confidence: "HIGH" };
     }
   }
-  const label = /^RESPONS[ÁA]VEL(?:\s+(?:PELA\s+(?:RESPOSTA|TRATATIVA|CORRE[ÇC][ÃA]O)|PELO\s+ATENDIMENTO))?\s*:?\s*$/i;
+  const label = /^RESPONS[ÁA]VEL\s+DA\s+[ÁA]REA\s+INSPECIONADA\s*:?\s*$/i;
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    if (!label.test(lines[index])) continue;
+    const value = cleanResponsibleName(lines[index + 1]);
+    if (value) return { value, confidence: "MEDIUM" };
+  }
+  return { value: null, confidence: "LOW" };
+}
+
+function extractAnalysisReviewer(text: string): {
+  value: string | null;
+  confidence: ExtractionConfidence;
+} {
+  const lines = normalizePdfText(text).split("\n").map((line) => line.trim()).filter(Boolean);
+  const inline = /REVISOR\s+DA\s+ELABORA[ÇC][ÃA]O\s+DA\s+AN[ÁA]LISE\s+DA\s+TRATATIVA\s*:?\s*(.+)$/i;
+  for (const line of lines) {
+    const match = line.match(inline);
+    const value = match?.[1] ? cleanResponsibleName(match[1]) : null;
+    if (value) return { value, confidence: "HIGH" };
+  }
+  const label = /^REVISOR\s+DA\s+ELABORA[ÇC][ÃA]O\s+DA\s+AN[ÁA]LISE\s+DA\s+TRATATIVA\s*:?\s*$/i;
   for (let index = 0; index < lines.length - 1; index += 1) {
     if (!label.test(lines[index])) continue;
     const value = cleanResponsibleName(lines[index + 1]);
@@ -107,11 +122,13 @@ function extractAnalysisStatus(text: string): {
 export function extractRncInformation(rawText: string): ExtractedRncInformation {
   const rnc = extractRncNumber(rawText);
   const responsible = extractResponsible(rawText);
+  const analysisReviewer = extractAnalysisReviewer(rawText);
   const analysis = extractAnalysisStatus(rawText);
   return {
     rncNumber: rnc.number,
     year: rnc.year,
     responsible: responsible.value,
+    analysisReviewer: analysisReviewer.value,
     analysisStatus: analysis.status,
     matchedStatusText: analysis.matchedText,
     extractedText: normalizePdfText(rawText),
@@ -119,6 +136,7 @@ export function extractRncInformation(rawText: string): ExtractedRncInformation 
     confidence: {
       rncNumber: rnc.confidence,
       responsible: responsible.confidence,
+      analysisReviewer: analysisReviewer.confidence,
       analysisStatus: analysis.confidence,
     },
   };

@@ -9,6 +9,7 @@ export interface ExtractedRncInformation {
   rncNumber: string | null;
   year: number | null;
   responsible: string | null;
+  analysisReviewer: string | null;
   analysisStatus: RncAnalysisStatus;
   matchedStatusText: string | null;
   extractedText: string;
@@ -16,6 +17,7 @@ export interface ExtractedRncInformation {
   confidence: {
     rncNumber: ExtractionConfidence;
     responsible: ExtractionConfidence;
+    analysisReviewer: ExtractionConfidence;
     analysisStatus: ExtractionConfidence;
   };
 }
