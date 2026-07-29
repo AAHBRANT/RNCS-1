@@ -146,6 +146,7 @@ export async function PATCH(request: Request) {
     const auditRows: Array<typeof auditLog.$inferInsert> = [];
     const manualFields = new Set<string>(JSON.parse(current.manualFields || "[]"));
     const fieldSources = JSON.parse(current.fieldSources || "{}") as Record<string, string>;
+    const outlookAudit = body.source === "outlook-browser-audit";
     for (const field of editableFields) {
       if (!(field in body)) continue;
       let next: string | number | null = body[field] === "" ? null : body[field] as string | number | null;
@@ -154,8 +155,18 @@ export async function PATCH(request: Request) {
       const previous = current[field];
       if (String(previous ?? "") !== String(next ?? "")) {
         changes[field] = next;
-        manualFields.add(field);
-        fieldSources[field] = "Preenchido manualmente";
+        if (!outlookAudit) manualFields.add(field);
+        fieldSources[field] = outlookAudit
+          ? field === "sentAt"
+            ? "Identificado nos Itens Enviados"
+            : field === "returnedAt"
+              ? "Identificado no e-mail de análise"
+              : field === "receivedAt"
+                ? "Identificado no e-mail recebido"
+                : field === "description" || field === "type"
+                  ? "Identificado no nome do anexo"
+                  : "Identificado no e-mail"
+          : "Preenchido manualmente";
         auditRows.push({ rncId: id, field, oldValue: String(previous ?? ""), newValue: String(next ?? "") });
       }
     }
