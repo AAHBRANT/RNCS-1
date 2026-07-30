@@ -66,41 +66,21 @@ function attachmentsFromEmails(emails: EmailEvent[]) {
 function fitPreviewTables(container: HTMLDivElement) {
   container.querySelectorAll<HTMLElement>("section.rnc-docx-preview").forEach((page) => {
     const pageStyle = window.getComputedStyle(page);
-    const availableWidth = page.clientWidth
-      - Number.parseFloat(pageStyle.paddingLeft)
-      - Number.parseFloat(pageStyle.paddingRight);
+    const pageRect = page.getBoundingClientRect();
+    const renderedScale = page.clientWidth ? pageRect.width / page.clientWidth : 1;
+    const contentRight = pageRect.right
+      - Number.parseFloat(pageStyle.paddingRight) * renderedScale;
 
     page.querySelectorAll<HTMLTableElement>("table").forEach((table) => {
-      table.style.removeProperty("width");
-      table.style.removeProperty("max-width");
-      table.style.tableLayout = "fixed";
+      table.style.removeProperty("transform");
+      table.style.removeProperty("transform-origin");
+      const tableRect = table.getBoundingClientRect();
+      if (!tableRect.width || tableRect.right <= contentRight + 1) return;
 
-      const tableStyle = window.getComputedStyle(table);
-      const horizontalOffset = Number.parseFloat(tableStyle.marginLeft || "0")
-        + Number.parseFloat(tableStyle.marginRight || "0");
-      const availableTableWidth = Math.max(1, availableWidth - horizontalOffset);
-      const columns = [...table.querySelectorAll<HTMLTableColElement>("col")];
-      const columnWidths = columns.map((column) =>
-        Number.parseFloat(window.getComputedStyle(column).width),
-      );
-      const intrinsicWidth = columnWidths.reduce(
-        (total, width) => total + (Number.isFinite(width) ? width : 0),
-        0,
-      );
-      const renderedWidth = Math.max(
-        intrinsicWidth,
-        table.scrollWidth,
-        table.getBoundingClientRect().width,
-      );
-      if (!renderedWidth || renderedWidth <= availableTableWidth + 1) return;
-
-      const ratio = availableTableWidth / renderedWidth;
-      columns.forEach((column, index) => {
-        const width = columnWidths[index];
-        if (Number.isFinite(width) && width > 0) column.style.width = `${width * ratio}px`;
-      });
-      table.style.width = `${availableTableWidth}px`;
-      table.style.maxWidth = "100%";
+      const visibleWidth = Math.max(1, contentRight - tableRect.left);
+      const ratio = Math.min(1, visibleWidth / tableRect.width);
+      table.style.transformOrigin = "left top";
+      table.style.transform = `scaleX(${ratio})`;
     });
   });
 }
@@ -197,8 +177,16 @@ export function ResponseWorkspace() {
           breakPages: true,
           useBase64URL: true,
         });
-        await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-        if (active) fitPreviewTables(container);
+        await document.fonts.ready;
+        await new Promise<void>((resolve) => window.requestAnimationFrame(() =>
+          window.requestAnimationFrame(() => resolve()),
+        ));
+        if (active) {
+          fitPreviewTables(container);
+          window.setTimeout(() => {
+            if (active) fitPreviewTables(container);
+          }, 250);
+        }
       })
       .catch((error) => {
         if (active) setNotice(error instanceof Error ? error.message : "Não foi possível abrir o documento.");

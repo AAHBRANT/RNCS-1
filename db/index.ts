@@ -215,6 +215,22 @@ async function initializeDatabaseOnce() {
     CONSTRAINT rnc_response_documents_number_unique UNIQUE(rnc_id, version)
   )`;
   await sql`CREATE INDEX IF NOT EXISTS rnc_response_documents_rnc_idx ON rnc_response_documents(rnc_id)`;
+  await sql`CREATE TABLE IF NOT EXISTS app_migrations (
+    key TEXT PRIMARY KEY,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`;
+  await sql`WITH claimed AS (
+      INSERT INTO app_migrations (key)
+      VALUES ('2026-07-30-remove-test-word-documents-164-269')
+      ON CONFLICT (key) DO NOTHING
+      RETURNING key
+    )
+    DELETE FROM rnc_response_documents
+    WHERE EXISTS (SELECT 1 FROM claimed)
+      AND rnc_id IN (
+        SELECT id FROM rncs
+        WHERE year = 2026 AND number IN ('164', '269')
+      )`;
   await sql`CREATE TABLE IF NOT EXISTS access_users (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
