@@ -9,7 +9,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "tsx --test tests/pdf-rules.test.ts && pnpm run build",
+    "test": "tsx --test tests/pdf-rules.test.ts tests/docx-template.test.ts && pnpm run build",
     "lint": "eslint app db --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },
