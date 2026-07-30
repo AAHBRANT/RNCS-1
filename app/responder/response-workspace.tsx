@@ -95,7 +95,7 @@ export function ResponseWorkspace() {
   const [photos, setPhotos] = useState<Array<File | null>>([null, null, null, null]);
   const [previewDocument, setPreviewDocument] = useState<WordDocument | null>(null);
   const [previewing, setPreviewing] = useState(false);
-  const [previewZoom, setPreviewZoom] = useState(70);
+  const [previewZoom, setPreviewZoom] = useState(100);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [selectedAttachments, setSelectedAttachments] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -103,6 +103,11 @@ export function ResponseWorkspace() {
   const [accessUser, setAccessUser] = useState<AccessUser | null>(null);
   const documentInput = useRef<HTMLInputElement>(null);
   const previewContainer = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!previewDocument) return;
+    setPreviewZoom(window.innerWidth >= 900 ? 100 : window.innerWidth >= 650 ? 80 : 60);
+  }, [previewDocument]);
 
   useEffect(() => {
     fetch("/api/rncs")
@@ -471,8 +476,8 @@ export function ResponseWorkspace() {
             <div className="word-actions">
               <label className="preview-zoom">Zoom
                 <select value={previewZoom} onChange={(event) => setPreviewZoom(Number(event.target.value))}>
-                  <option value={50}>50%</option><option value={60}>60%</option><option value={70}>70%</option><option value={80}>80%</option>
-                  <option value={90}>90%</option><option value={100}>100%</option><option value={110}>110%</option>
+                  <option value={50}>50% · visão geral</option><option value={60}>60%</option><option value={70}>70%</option><option value={80}>80%</option>
+                  <option value={90}>90%</option><option value={100}>100% · leitura</option><option value={110}>110%</option><option value={125}>125%</option>
                 </select>
               </label>
               <a className="button secondary link-button" href={`/api/rncs/${rnc.id}/response/document?document=${previewDocument.id}`}>Baixar Word</a>

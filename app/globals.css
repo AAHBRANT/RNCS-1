@@ -195,7 +195,7 @@ dd { margin:0; font-size:12px; font-weight:700; }
 .document-preview-content section.rnc-docx-preview td,.document-preview-content section.rnc-docx-preview th { min-width:0!important; max-width:100%!important; overflow-wrap:anywhere; word-break:normal; }
 .document-preview-content section.rnc-docx-preview img { max-width:100%!important; height:auto!important; }
 .preview-zoom { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:10px; font-weight:700; }
-.preview-zoom select { min-width:76px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:white; color:var(--ink); font:inherit; }
+.preview-zoom select { min-width:142px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:white; color:var(--ink); font:inherit; }
 .document-preview-loading { position:fixed; top:50%; left:50%; z-index:92; transform:translate(-50%,-50%); padding:12px 17px; border-radius:9px; background:#173f2f; color:#fff; font-size:11px; box-shadow:0 8px 24px rgba(0,0,0,.2); }
 .document-preview-modal > footer { padding:9px 16px; border-top:1px solid var(--line); color:var(--muted); font-size:9px; text-align:center; }
 .save-bar { display:flex; justify-content:space-between; align-items:center; padding-top:17px; border-top:1px solid var(--line); }
