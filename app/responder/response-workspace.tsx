@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { normalizeDocxForPreview } from "../../lib/docx-preview-normalizer";
 
 type RncListItem = {
   id: number; number: string; year: number; description: string; status: string;
@@ -182,9 +183,12 @@ export function ResponseWorkspace() {
       })
       .then(async (buffer) => {
         if (!active) return;
-        const { renderAsync } = await import("docx-preview");
+        const [previewBuffer, { renderAsync }] = await Promise.all([
+          normalizeDocxForPreview(buffer),
+          import("docx-preview"),
+        ]);
         if (!active) return;
-        await renderAsync(buffer, container, undefined, {
+        await renderAsync(previewBuffer, container, undefined, {
           className: "rnc-docx-preview",
           inWrapper: true,
           ignoreWidth: false,
