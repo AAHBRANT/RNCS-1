@@ -74,15 +74,31 @@ function fitPreviewTables(container: HTMLDivElement) {
       table.style.removeProperty("max-width");
       table.style.tableLayout = "fixed";
 
-      const renderedWidth = Math.max(table.scrollWidth, table.getBoundingClientRect().width);
-      if (!renderedWidth || renderedWidth <= availableWidth + 1) return;
+      const tableStyle = window.getComputedStyle(table);
+      const horizontalOffset = Number.parseFloat(tableStyle.marginLeft || "0")
+        + Number.parseFloat(tableStyle.marginRight || "0");
+      const availableTableWidth = Math.max(1, availableWidth - horizontalOffset);
+      const columns = [...table.querySelectorAll<HTMLTableColElement>("col")];
+      const columnWidths = columns.map((column) =>
+        Number.parseFloat(window.getComputedStyle(column).width),
+      );
+      const intrinsicWidth = columnWidths.reduce(
+        (total, width) => total + (Number.isFinite(width) ? width : 0),
+        0,
+      );
+      const renderedWidth = Math.max(
+        intrinsicWidth,
+        table.scrollWidth,
+        table.getBoundingClientRect().width,
+      );
+      if (!renderedWidth || renderedWidth <= availableTableWidth + 1) return;
 
-      const ratio = availableWidth / renderedWidth;
-      table.querySelectorAll<HTMLTableColElement>("col").forEach((column) => {
-        const width = Number.parseFloat(window.getComputedStyle(column).width);
-        if (width > 0) column.style.width = `${width * ratio}px`;
+      const ratio = availableTableWidth / renderedWidth;
+      columns.forEach((column, index) => {
+        const width = columnWidths[index];
+        if (Number.isFinite(width) && width > 0) column.style.width = `${width * ratio}px`;
       });
-      table.style.width = `${availableWidth}px`;
+      table.style.width = `${availableTableWidth}px`;
       table.style.maxWidth = "100%";
     });
   });
