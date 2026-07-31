@@ -101,12 +101,6 @@ export function ResponseWorkspace() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [accessUser, setAccessUser] = useState<AccessUser | null>(null);
-  const [initialDraftSnapshot, setInitialDraftSnapshot] = useState<Draft>(emptyDraft);
-  const [initialPhotosSnapshot, setInitialPhotosSnapshot] = useState<Array<File | null>>([null, null, null, null]);
-  const [initialSelectedAttachmentsSnapshot, setInitialSelectedAttachmentsSnapshot] = useState<string[]>([]);
-  const [showConfirmDiscard, setShowConfirmDiscard] = useState(false);
-  const [pendingNavigation, setPendingNavigation] = useState<"rnc" | "panel" | null>(null);
-  const [pendingRncId, setPendingRncId] = useState("");
   const documentInput = useRef<HTMLInputElement>(null);
   const previewContainer = useRef<HTMLDivElement>(null);
 
@@ -147,46 +141,15 @@ export function ResponseWorkspace() {
         setDocuments(documentData.documents || []);
         setPhotos([null, null, null, null]);
         const loaded = data.draft || emptyDraft;
-        const draftWithDefaults = { ...emptyDraft, ...loaded };
-        setDraft(draftWithDefaults);
-        setInitialDraftSnapshot(draftWithDefaults);
-        setInitialPhotosSnapshot([null, null, null, null]);
-        try {
-          const attachments = JSON.parse(loaded.selectedAttachments || "[]");
-          setSelectedAttachments(attachments);
-          setInitialSelectedAttachmentsSnapshot(attachments);
-        } catch {
-          setSelectedAttachments([]);
-          setInitialSelectedAttachmentsSnapshot([]);
-        }
+        setDraft({ ...emptyDraft, ...loaded });
+        try { setSelectedAttachments(JSON.parse(loaded.selectedAttachments || "[]")); }
+        catch { setSelectedAttachments([]); }
       })
       .catch((error) => setNotice(error instanceof Error ? error.message : "Falha ao abrir a RNC."))
       .finally(() => setBusy(false));
   }, [selectedId]);
 
   const attachments = useMemo(() => attachmentsFromEmails(emails), [emails]);
-
-  const hasUnsavedChanges = useMemo(() => {
-    if (JSON.stringify(initialDraftSnapshot) === JSON.stringify(emptyDraft)) return false;
-    const draftChanged = JSON.stringify(draft) !== JSON.stringify(initialDraftSnapshot);
-    const attachmentsChanged = JSON.stringify(selectedAttachments) !== JSON.stringify(initialSelectedAttachmentsSnapshot);
-    const photosChanged = photos.some((photo, i) => {
-      const initialPhoto = initialPhotosSnapshot[i];
-      return (photo === null) !== (initialPhoto === null) || (photo !== null && initialPhoto !== null && photo.name !== initialPhoto.name);
-    });
-    return draftChanged || attachmentsChanged || photosChanged;
-  }, [draft, selectedAttachments, photos, initialDraftSnapshot, initialSelectedAttachmentsSnapshot, initialPhotosSnapshot]);
-
-  useEffect(() => {
-    const handler = (event: BeforeUnloadEvent) => {
-      if (hasUnsavedChanges) {
-        event.preventDefault();
-        event.returnValue = "";
-      }
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [hasUnsavedChanges]);
 
   useEffect(() => {
     if (!rnc || !previewDocument || !previewContainer.current) return;
@@ -275,17 +238,6 @@ export function ResponseWorkspace() {
     setNotice("Contexto copiado. Abra o agente e cole as informações.");
   }
 
-  function handleConfirmDiscard() {
-    if (pendingNavigation === "rnc" && pendingRncId) {
-      setSelectedId(pendingRncId);
-    } else if (pendingNavigation === "panel") {
-      window.location.href = "/";
-    }
-    setShowConfirmDiscard(false);
-    setPendingNavigation(null);
-    setPendingRncId("");
-  }
-
   async function saveDraft() {
     if (!rnc) return;
     setBusy(true);
@@ -300,12 +252,7 @@ export function ResponseWorkspace() {
       setNotice(`Versão ${data.version} salva.`);
       const refreshed = await fetch(`/api/rncs/${rnc.id}/response`).then((item) => item.json());
       setVersions(refreshed.versions || []);
-      setDraft((current) => {
-        const updated = { ...current, updatedAt: data.draft.updatedAt };
-        setInitialDraftSnapshot(updated);
-        setInitialSelectedAttachmentsSnapshot(selectedAttachments);
-        return updated;
-      });
+      setDraft((current) => ({ ...current, updatedAt: data.draft.updatedAt }));
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Não foi possível salvar.");
     } finally {
@@ -385,12 +332,8 @@ export function ResponseWorkspace() {
   function restoreVersion(version: Version) {
     try {
       const snapshot = JSON.parse(version.snapshot) as Partial<Draft> & { selectedAttachments?: string };
-      const restored = { ...emptyDraft, ...snapshot };
-      const attachments = JSON.parse(snapshot.selectedAttachments || "[]");
-      setDraft(restored);
-      setSelectedAttachments(attachments);
-      setInitialDraftSnapshot(restored);
-      setInitialSelectedAttachmentsSnapshot(attachments);
+      setDraft({ ...emptyDraft, ...snapshot });
+      setSelectedAttachments(JSON.parse(snapshot.selectedAttachments || "[]"));
       setNotice(`Versão ${version.version} carregada para edição. Salve para registrar uma nova versão.`);
     } catch {
       setNotice("Não foi possível carregar esta versão.");
@@ -404,28 +347,13 @@ export function ResponseWorkspace() {
           <Image className="brand-mark" src="/favicon-rnc.png" alt="RNC" width={39} height={39} priority />
           <div><strong>Controle de RNC</strong><small>Área de elaboração de respostas</small></div>
         </Link>
-        <div className="header-actions">{accessUser && <span className="user-chip"><strong>{accessUser.name}</strong><small>{accessUser.role === "drafter" ? "Elaborador" : accessUser.role === "admin" ? "Administradora" : "Revisor/Aprovador"}</small></span>}<button className="button secondary link-button" onClick={() => {
-          if (hasUnsavedChanges) {
-            setPendingNavigation("panel");
-            setShowConfirmDiscard(true);
-          } else {
-            window.location.href = "/";
-          }
-        }}>← Voltar ao painel</button><a className="logout-link" href="/api/auth/logout">Sair</a></div>
+        <div className="header-actions">{accessUser && <span className="user-chip"><strong>{accessUser.name}</strong><small>{accessUser.role === "drafter" ? "Elaborador" : accessUser.role === "admin" ? "Administradora" : "Revisor/Aprovador"}</small></span>}<Link className="button secondary link-button" href="/">← Voltar ao painel</Link><a className="logout-link" href="/api/auth/logout">Sair</a></div>
       </header>
 
       <section className="response-page-heading">
         <div><p className="eyebrow">Elaboração assistida</p><h1>Responder RNC</h1><p>Organize a tratativa, utilize seu agente e mantenha as versões na mesma página.</p></div>
         <label>Selecionar RNC
-          <select value={selectedId} onChange={(event) => {
-            if (hasUnsavedChanges) {
-              setPendingNavigation("rnc");
-              setShowConfirmDiscard(true);
-              setPendingRncId(event.target.value);
-            } else {
-              setSelectedId(event.target.value);
-            }
-          }}>
+          <select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>
             {rncs.map((item) => <option key={item.id} value={item.id}>RNC {item.number}/{item.year} · {item.status}</option>)}
           </select>
         </label>
@@ -461,11 +389,6 @@ export function ResponseWorkspace() {
         </aside>
 
         <div className="response-editor">
-          {hasUnsavedChanges && (
-            <div className="unsaved-warning">
-              <span>⚠️ Há alterações não salvas. Clique em "Salvar nova versão" para registrar.</span>
-            </div>
-          )}
           <div className="editor-toolbar">
             <label>Situação do documento
               <select value={draft.status} onChange={(event) => update("status", event.target.value)}>
@@ -546,26 +469,6 @@ export function ResponseWorkspace() {
         </aside>
       </section>}
       {notice && <button className="toast" onClick={() => setNotice("")}>{notice}<span>×</span></button>}
-      {showConfirmDiscard && (
-        <div className="modal-backdrop" onClick={() => {
-          setShowConfirmDiscard(false);
-          setPendingNavigation(null);
-          setPendingRncId("");
-        }}>
-          <div className="modal-dialog" onClick={(event) => event.stopPropagation()}>
-            <h2>Descartar alterações?</h2>
-            <p>Há mudanças não salvas. Se continuar, elas serão perdidas.</p>
-            <div className="modal-actions">
-              <button className="button secondary" onClick={() => {
-                setShowConfirmDiscard(false);
-                setPendingNavigation(null);
-                setPendingRncId("");
-              }}>Cancelar</button>
-              <button className="button primary" onClick={handleConfirmDiscard}>Descartar</button>
-            </div>
-          </div>
-        </div>
-      )}
       {previewDocument && rnc && <div className="document-preview-backdrop" role="presentation" onClick={() => setPreviewDocument(null)}>
         <section className="document-preview-modal" role="dialog" aria-modal="true" aria-label={`Visualização de ${previewDocument.fileName}`} onClick={(event) => event.stopPropagation()}>
           <header>
