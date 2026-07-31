@@ -41,6 +41,8 @@ type SyncStats = {
 };
 
 const OFFICIAL_EMAIL = "contato@jampasustentavel.com";
+const RESPONDER_EMAIL = "isabella.marques@aahbrant.com";
+const AAHBRANT_DOMAIN = "@aahbrant.com";
 const ONLY_WORK = "Parque Socioambiental do Roger – Fase II";
 const protectedStatuses = new Set(["Aprovada", "Reprovada", "Retorno recebido — status a confirmar"]);
 
@@ -410,7 +412,11 @@ async function processMessage(
     .map((item) => address(item.emailAddress?.address)).filter(Boolean);
   const officialIncoming = kind === "inbox" && sender === OFFICIAL_EMAIL;
   const officialSent = kind === "sent" && recipientsList.includes(OFFICIAL_EMAIL);
-  if (!officialIncoming && !officialSent) return stats;
+  const forwardedResponse = kind === "inbox" &&
+    sender.endsWith(AAHBRANT_DOMAIN) &&
+    recipientsList.includes(address(RESPONDER_EMAIL)) &&
+    recipientsList.includes(OFFICIAL_EMAIL);
+  if (!officialIncoming && !officialSent && !forwardedResponse) return stats;
   stats.messagesAnalyzed = 1;
 
   const attachments = await attachmentsForMessage(accessToken, message);
@@ -463,10 +469,10 @@ async function processMessage(
   const occurredDate = dateOnly(occurredAt);
   const isAnalysis = officialIncoming
     && /encaminhamento de analise(?:s)? de tratativa(?:s)? do(?:s)? rnc/i.test(normalize(subject));
-  const eventType = officialSent ? "envio_resposta" : isAnalysis ? "retorno_supervisao" : "recebimento";
+  const eventType = (officialSent || forwardedResponse) ? "envio_resposta" : isAnalysis ? "retorno_supervisao" : "recebimento";
 
   for (const identity of identities) {
-    if ((officialSent || isAnalysis) && !identityIsStrong(identity, subject, attachmentNames) && !conversationLinked) continue;
+    if ((officialSent || forwardedResponse || isAnalysis) && !identityIsStrong(identity, subject, attachmentNames) && !conversationLinked) continue;
     let [rnc] = await db.select().from(rncs).where(and(
       eq(rncs.workId, work.id), eq(rncs.number, identity.number), eq(rncs.year, identity.year),
     )).limit(1);
