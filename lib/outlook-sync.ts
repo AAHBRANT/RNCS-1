@@ -60,17 +60,20 @@ function address(value?: string) {
   return normalize(value || "").trim();
 }
 
-function extractIdentities(subject: string, attachmentNames: string[], body: string) {
+export function extractIdentities(subject: string, attachmentNames: string[], body: string) {
   const found = new Map<string, Identity>();
   const add = (number: string, year: string) => {
     const parsedYear = Number(year.length === 2 ? `20${year}` : year);
     const identity = { number: number.padStart(3, "0"), year: parsedYear };
     found.set(`${identity.number}/${identity.year}`, identity);
   };
-  const strongSources = [subject, ...attachmentNames];
-  for (const source of strongSources) {
-    for (const match of source.matchAll(/\b(\d{1,6})\s*[\/_-]\s*(20\d{2}|\d{2})\b/g)) add(match[1], match[2]);
+  // Extract from subject: numbers without RNC keyword (soft extraction)
+  for (const match of subject.matchAll(/\b(\d{1,6})\s*[\/_-]\s*(20\d{2}|\d{2})\b/g)) add(match[1], match[2]);
+  // Extract from attachment names: REQUIRE "RNC" keyword nearby
+  for (const name of attachmentNames) {
+    for (const match of name.matchAll(/\bRNCs?\s*(?:N[º°o.]?\s*)?[-–—_/:]?\s*(\d{1,6})\s*[\/_-]\s*(20\d{2}|\d{2})\b/gi)) add(match[1], match[2]);
   }
+  // Extract from subject and body: REQUIRE "RNC" keyword
   for (const match of `${subject}\n${body}`.matchAll(/\bRNCs?\s*(?:N[º°o.]?\s*)?[-–—:#]?\s*(\d{1,6})\s*[\/-]\s*(20\d{2}|\d{2})\b/gi)) {
     add(match[1], match[2]);
   }

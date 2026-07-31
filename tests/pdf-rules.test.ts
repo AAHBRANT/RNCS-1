@@ -3,7 +3,7 @@ import test from "node:test";
 import { extractRncInformation } from "../lib/pdf/extract-rnc-information";
 import { processRncAttachment } from "../lib/pdf/process-rnc-attachment";
 import { analysisStatusFromEmailBody } from "../lib/rnc-analysis";
-import { classifyType, explicitSentIdentities, isGraphSearchStaleError } from "../lib/outlook-sync";
+import { classifyType, explicitSentIdentities, extractIdentities, isGraphSearchStaleError } from "../lib/outlook-sync";
 
 test("identifica número e ano da RNC", () => {
   assert.deepEqual(
@@ -219,4 +219,40 @@ test("reconhece cursor de pesquisa invalidado pelo Microsoft Graph", () => {
     'Microsoft Graph respondeu 400: {"error":{"code":"ErrorExecuteSearchStaleData","message":"Please reissue the query with rowOffset = 0. The specified rowoffset is 10, but the results are stale."}}',
   )), true);
   assert.equal(isGraphSearchStaleError(new Error("Erro de autenticação")), false);
+});
+
+test("aceita anexo com RNC e padrão número-ano", () => {
+  const cases = [
+    "RNC_123-2026.pdf",
+    "RNC 123.2026.docx",
+    "rnc-123_2026.pdf",
+    "Encaminhamento RNC nº 123-2026.pdf",
+    "FG 13 - TRATATIVA DE RNC 159_2026.pdf",
+  ];
+  for (const attachmentName of cases) {
+    const result = extractIdentities("", [attachmentName], "");
+    assert.equal(result.length, 1, `Deveria aceitar: ${attachmentName}`);
+    assert.equal(result[0].number, "123", `Número incorreto para: ${attachmentName}`);
+  }
+});
+
+test("rejeita anexo com apenas número-ano (sem RNC)", () => {
+  const cases = [
+    "123-2026.pdf",
+    "Anexo 123_26.docx",
+    "evidencia_159-2026.txt",
+  ];
+  for (const attachmentName of cases) {
+    const result = extractIdentities("", [attachmentName], "");
+    assert.equal(result.length, 0, `Deveria rejeitar: ${attachmentName}`);
+  }
+});
+
+test("continua extraindo de subject e body sem exigir RNC em attachmentNames", () => {
+  const result = extractIdentities(
+    "RNC 159/2026",
+    ["123-2026.pdf"],
+    "Análise da RNC 159/2026",
+  );
+  assert.deepEqual(result.map(r => `${r.number}/${r.year}`), ["159/2026"], "Deveria extrair de subject e body mesmo sem RNC no attachment");
 });
