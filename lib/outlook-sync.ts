@@ -414,7 +414,8 @@ async function processMessage(
   const recipientsList = [...(message.toRecipients || []), ...(message.ccRecipients || [])]
     .map((item) => address(item.emailAddress?.address)).filter(Boolean);
   const officialIncoming = kind === "inbox" && sender === OFFICIAL_EMAIL;
-  const officialSent = kind === "sent" && recipientsList.includes(OFFICIAL_EMAIL);
+  const officialSent = (kind === "sent" && recipientsList.includes(OFFICIAL_EMAIL))
+    || (kind === "inbox" && sender !== OFFICIAL_EMAIL && recipientsList.includes(OFFICIAL_EMAIL));
   const forwardedResponse = kind === "inbox" &&
     sender.endsWith(AAHBRANT_DOMAIN) &&
     recipientsList.includes(address(RESPONDER_EMAIL)) &&
