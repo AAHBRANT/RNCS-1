@@ -223,16 +223,16 @@ test("reconhece cursor de pesquisa invalidado pelo Microsoft Graph", () => {
 
 test("aceita anexo com RNC e padrão número-ano", () => {
   const cases = [
-    "RNC_123-2026.pdf",
-    "RNC 123.2026.docx",
-    "rnc-123_2026.pdf",
-    "Encaminhamento RNC nº 123-2026.pdf",
-    "FG 13 - TRATATIVA DE RNC 159_2026.pdf",
-  ];
-  for (const attachmentName of cases) {
+    ["RNC_123-2026.pdf", "123"],
+    ["RNC 123.2026.docx", "123"],
+    ["rnc-123_2026.pdf", "123"],
+    ["Encaminhamento RNC nº 123-2026.pdf", "123"],
+    ["FG 13 - TRATATIVA DE RNC 159_2026.pdf", "159"],
+  ] as const;
+  for (const [attachmentName, expectedNumber] of cases) {
     const result = extractIdentities("", [attachmentName], "");
     assert.equal(result.length, 1, `Deveria aceitar: ${attachmentName}`);
-    assert.equal(result[0].number, "123", `Número incorreto para: ${attachmentName}`);
+    assert.equal(result[0].number, expectedNumber, `Número incorreto para: ${attachmentName}`);
   }
 });
 
@@ -255,4 +255,46 @@ test("continua extraindo de subject e body sem exigir RNC em attachmentNames", (
     "Análise da RNC 159/2026",
   );
   assert.deepEqual(result.map(r => `${r.number}/${r.year}`), ["159/2026"], "Deveria extrair de subject e body mesmo sem RNC no attachment");
+});
+
+test("extrai os 3 campos novos: TIPO DE OCORRÊNCIA, CARACTERIZAÇÃO e DATA DA INSPEÇÃO", () => {
+  const information = extractRncInformation([
+    "RNC 159/2026",
+    "TIPO DE OCORRÊNCIA",
+    "Falha Construtiva",
+    "CARACTERIZAÇÃO DA OCORRÊNCIA",
+    "Presença de infiltração em revestimento de gesso da arquibancada",
+    "DATA DA INSPEÇÃO",
+    "12/03/2026",
+    "RESPONSÁVEL DA ÁREA INSPECIONADA",
+    "ISABELLA MARQUES",
+  ].join("\n"));
+  assert.equal(information.occurrenceType, "Falha Construtiva");
+  assert.equal(information.occurrenceDescription, "Presença de infiltração em revestimento de gesso da arquibancada");
+  assert.equal(information.inspectionDate, "2026-03-12");
+  assert.equal(information.confidence.occurrenceType, "HIGH");
+  assert.equal(information.confidence.occurrenceDescription, "HIGH");
+  assert.equal(information.confidence.inspectionDate, "HIGH");
+});
+
+test("extrai os campos novos de tabela estruturada com múltiplas linhas", () => {
+  const information = extractRncInformation([
+    "Outros dados do RNC",
+    "TIPO DE OCORRÊNCIA\tCARACTERIZAÇÃO DA OCORRÊNCIA\tDATA DA INSPEÇÃO",
+    "Execução\tFissura em fundação\t25/06/2026",
+    "Valores extras ignorados\tMais dados\tIgnorado",
+  ].join("\n"));
+  assert.equal(information.occurrenceType, "Execução");
+  assert.equal(information.occurrenceDescription, "Fissura em fundação");
+  assert.equal(information.inspectionDate, "2026-06-25");
+});
+
+test("retorna LOW confidence quando os campos novos não existem", () => {
+  const information = extractRncInformation("RNC 159/2026 Documento sem os campos novos");
+  assert.equal(information.occurrenceType, null);
+  assert.equal(information.occurrenceDescription, null);
+  assert.equal(information.inspectionDate, null);
+  assert.equal(information.confidence.occurrenceType, "LOW");
+  assert.equal(information.confidence.occurrenceDescription, "LOW");
+  assert.equal(information.confidence.inspectionDate, "LOW");
 });

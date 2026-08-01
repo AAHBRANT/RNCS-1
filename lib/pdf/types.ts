@@ -14,6 +14,9 @@ export interface ExtractedRncInformation {
   analysisReviewer: string | null;
   analysisStatus: RncAnalysisStatus;
   matchedStatusText: string | null;
+  occurrenceType: string | null;
+  occurrenceDescription: string | null;
+  inspectionDate: string | null;
   extractedText: string;
   extractionMethod: "PDF_TEXT" | "OCR" | "NONE";
   confidence: {
@@ -23,6 +26,9 @@ export interface ExtractedRncInformation {
     contract: ExtractionConfidence;
     analysisReviewer: ExtractionConfidence;
     analysisStatus: ExtractionConfidence;
+    occurrenceType: ExtractionConfidence;
+    occurrenceDescription: ExtractionConfidence;
+    inspectionDate: ExtractionConfidence;
   };
 }
 

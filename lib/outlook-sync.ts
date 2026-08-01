@@ -68,13 +68,13 @@ export function extractIdentities(subject: string, attachmentNames: string[], bo
     found.set(`${identity.number}/${identity.year}`, identity);
   };
   // Extract from subject: numbers without RNC keyword (soft extraction)
-  for (const match of subject.matchAll(/\b(\d{1,6})\s*[\/_-]\s*(20\d{2}|\d{2})\b/g)) add(match[1], match[2]);
+  for (const match of subject.matchAll(/\b(\d{1,6})\s*[./_-]\s*(20\d{2}|\d{2})\b/g)) add(match[1], match[2]);
   // Extract from attachment names: REQUIRE "RNC" keyword nearby
   for (const name of attachmentNames) {
-    for (const match of name.matchAll(/\bRNCs?\s*(?:N[º°o.]?\s*)?[-–—_/:]?\s*(\d{1,6})\s*[\/_-]\s*(20\d{2}|\d{2})\b/gi)) add(match[1], match[2]);
+    for (const match of name.matchAll(/\bRNCs?\s*(?:N[º°o.]?\s*)?[-–—_/:]?\s*(\d{1,6})\s*[./_-]\s*(20\d{2}|\d{2})\b/gi)) add(match[1], match[2]);
   }
   // Extract from subject and body: REQUIRE "RNC" keyword
-  for (const match of `${subject}\n${body}`.matchAll(/\bRNCs?\s*(?:N[º°o.]?\s*)?[-–—:#]?\s*(\d{1,6})\s*[\/-]\s*(20\d{2}|\d{2})\b/gi)) {
+  for (const match of `${subject}\n${body}`.matchAll(/\bRNCs?\s*(?:N[º°o.]?\s*)?[-–—:#]?\s*(\d{1,6})\s*[./-]\s*(20\d{2}|\d{2})\b/gi)) {
     add(match[1], match[2]);
   }
   return [...found.values()];
@@ -495,6 +495,15 @@ async function processMessage(
     const analysisReviewers = [...new Set(pdfInformation.matchingFg14
       .map((information) => information.analysisReviewer)
       .filter((value): value is string => Boolean(value)))];
+    const occurrenceTypes = [...new Set(pdfInformation.matching
+      .map((information) => information.occurrenceType)
+      .filter((value): value is string => Boolean(value)))];
+    const occurrenceDescriptions = [...new Set(pdfInformation.matching
+      .map((information) => information.occurrenceDescription)
+      .filter((value): value is string => Boolean(value)))];
+    const inspectionDates = [...new Set(pdfInformation.matching
+      .map((information) => information.inspectionDate)
+      .filter((value): value is string => Boolean(value)))];
     if (rnc && pdfInformation.conflicts.length) {
       await recordConflict(rnc.id, "documentIdentity", [
         `RNC esperada ${identity.number}/${identity.year}`,
@@ -511,6 +520,7 @@ async function processMessage(
         inspectionOwner: inspectionOwners.length === 1 ? inspectionOwners[0] : "",
         contract: contracts.length === 1 ? contracts[0] : "",
         analysisOwner: analysisReviewers.length === 1 ? analysisReviewers[0] : "",
+        inspectionDate: inspectionDates.length === 1 ? inspectionDates[0] : null,
         fieldSources: JSON.stringify({
           workId: "Identificado no e-mail recebido", number: "Identificado no e-mail recebido",
           year: "Identificado no e-mail recebido", description: description ? "Identificado no documento" : "Não identificado",
@@ -519,6 +529,7 @@ async function processMessage(
           inspectionOwner: inspectionOwners.length === 1 ? "Extraído do documento" : "Não identificado",
           contract: contracts.length === 1 ? "Extraído do documento" : "Não identificado",
           analysisOwner: analysisReviewers.length === 1 ? "Extraído do documento da RNC" : "Não identificado",
+          inspectionDate: inspectionDates.length === 1 ? "Extraído do documento" : "Não identificado",
         }),
         fieldConfidence: JSON.stringify({
           receivedAt: { score: 5, reason: "Data da mensagem oficial recebida da Supervisão." },
@@ -528,6 +539,7 @@ async function processMessage(
           inspectionOwner: { score: inspectionOwners.length === 1 ? 5 : 1, reason: inspectionOwners.length === 1 ? "Fiscal extraído do campo 'Responsável Fiscal pela Inspeção'." : "Fiscal da inspeção não localizado." },
           contract: { score: contracts.length === 1 ? 5 : 1, reason: contracts.length === 1 ? "Contrato extraído do PDF original da RNC." : "Contrato não localizado." },
           analysisOwner: { score: analysisReviewers.length === 1 ? 5 : 1, reason: analysisReviewers.length === 1 ? "Revisor extraído do campo 'Revisor da Elaboração do RNC'." : "Revisor não localizado no documento." },
+          inspectionDate: { score: inspectionDates.length === 1 ? 5 : 1, reason: inspectionDates.length === 1 ? "Data da inspeção extraída do campo 'DATA DA INSPEÇÃO'." : "Data da inspeção não localizada." },
         }),
         sourceSummary: `Mensagem oficial recebida em ${occurredAt}`,
       }).returning();
@@ -634,6 +646,54 @@ async function processMessage(
           confidence.analysisOwner = {
             score: 1,
             reason: "Revisor da Elaboração do RNC não localizado na célula correspondente do FG 14.",
+          };
+        }
+        if (occurrenceTypes.length === 1) {
+          changes.type = occurrenceTypes[0];
+          sources.type = "Extraído do documento";
+          confidence.type = {
+            score: 5,
+            reason: "Tipo de ocorrência extraído do campo 'TIPO DE OCORRÊNCIA'.",
+          };
+        } else if (occurrenceTypes.length > 1) {
+          await recordConflict(rnc.id, "type", occurrenceTypes);
+        } else if (canAutoUpdate(rnc, "type")) {
+          sources.type = "Não identificado";
+          confidence.type = {
+            score: 1,
+            reason: "Tipo de ocorrência não localizado no campo correspondente.",
+          };
+        }
+        if (occurrenceDescriptions.length === 1) {
+          changes.description = occurrenceDescriptions[0];
+          sources.description = "Extraído do documento";
+          confidence.description = {
+            score: 5,
+            reason: "Descrição da ocorrência extraída do campo 'CARACTERIZAÇÃO DA OCORRÊNCIA'.",
+          };
+        } else if (occurrenceDescriptions.length > 1) {
+          await recordConflict(rnc.id, "description", occurrenceDescriptions);
+        } else if (canAutoUpdate(rnc, "description")) {
+          sources.description = "Não identificado";
+          confidence.description = {
+            score: 1,
+            reason: "Descrição da ocorrência não localizada no campo correspondente.",
+          };
+        }
+        if (inspectionDates.length === 1) {
+          changes.inspectionDate = inspectionDates[0];
+          sources.inspectionDate = "Extraído do documento";
+          confidence.inspectionDate = {
+            score: 5,
+            reason: "Data da inspeção extraída do campo 'DATA DA INSPEÇÃO'.",
+          };
+        } else if (inspectionDates.length > 1) {
+          await recordConflict(rnc.id, "inspectionDate", inspectionDates);
+        } else if (canAutoUpdate(rnc, "inspectionDate")) {
+          sources.inspectionDate = "Não identificado";
+          confidence.inspectionDate = {
+            score: 1,
+            reason: "Data da inspeção não localizada no campo correspondente.",
           };
         }
       } else if (eventType === "envio_resposta") {

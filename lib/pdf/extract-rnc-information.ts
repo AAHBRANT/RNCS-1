@@ -240,6 +240,42 @@ function extractAnalysisStatus(text: string): {
   return { status: "STATUS_A_CONFIRMAR", matchedText: null, confidence: "LOW" };
 }
 
+function extractOccurrenceType(tables: PdfTable[], layoutText: string, rawText: string): { value: string | null; confidence: ExtractionConfidence } {
+  const text = layoutText || rawText;
+  const value = valueImmediatelyBelow(tables, "TIPO DE OCORRÊNCIA")
+    || valueFromLayoutColumn(text, "TIPO DE OCORRÊNCIA");
+  if (value) return { value: value.trim(), confidence: "HIGH" };
+  const match = text.match(/TIPO\s+DE\s+OCORR[ÊE]NCIA\s*:?\s*\n\s*([^\n\t]+)/i);
+  if (match?.[1]) return { value: match[1].trim(), confidence: "HIGH" };
+  return { value: null, confidence: "LOW" };
+}
+
+function extractOccurrenceDescription(tables: PdfTable[], layoutText: string, rawText: string): { value: string | null; confidence: ExtractionConfidence } {
+  const text = layoutText || rawText;
+  const value = valueImmediatelyBelow(tables, "CARACTERIZAÇÃO DA OCORRÊNCIA")
+    || valueFromLayoutColumn(text, "CARACTERIZAÇÃO DA OCORRÊNCIA");
+  if (value) return { value: value.trim(), confidence: "HIGH" };
+  const match = text.match(/CARACTERIZA[CÇ][ÃA]O\s+DA\s+OCORR[ÊE]NCIA\s*:?\s*\n\s*([^\n\t]+)/i);
+  if (match?.[1]) return { value: match[1].trim(), confidence: "HIGH" };
+  return { value: null, confidence: "LOW" };
+}
+
+function extractInspectionDate(tables: PdfTable[], layoutText: string, rawText: string): { value: string | null; confidence: ExtractionConfidence } {
+  const text = layoutText || rawText;
+  const dateStr = valueImmediatelyBelow(tables, "DATA DA INSPEÇÃO")
+    || valueFromLayoutColumn(text, "DATA DA INSPEÇÃO");
+  let foundDate = dateStr;
+  if (!foundDate) {
+    const match = text.match(/DATA\s+DA\s+INSPE[CÇ][ÃA]O\s*:?\s*\n\s*(\d{2}\/\d{2}\/\d{4})/i);
+    foundDate = match?.[1] ?? null;
+  }
+  if (!foundDate) return { value: null, confidence: "LOW" };
+  const dateMatch = foundDate.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  if (!dateMatch) return { value: null, confidence: "LOW" };
+  const [, day, month, year] = dateMatch;
+  return { value: `${year}-${month}-${day}`, confidence: "HIGH" };
+}
+
 export function extractRncInformation(
   rawText: string,
   tables: PdfTable[] = [],
@@ -272,6 +308,9 @@ export function extractRncInformation(
   const reviewerValue = structuredReviewer
     ? cleanResponsibleName(structuredReviewer)
     : hasStructuredTables ? null : analysisReviewer.value;
+  const occurrenceType = extractOccurrenceType(tables, layoutText, rawText);
+  const occurrenceDescription = extractOccurrenceDescription(tables, layoutText, rawText);
+  const inspectionDate = extractInspectionDate(tables, layoutText, rawText);
   return {
     rncNumber: rnc.number,
     year: rnc.year,
@@ -281,6 +320,9 @@ export function extractRncInformation(
     analysisReviewer: reviewerValue,
     analysisStatus: analysis.status,
     matchedStatusText: analysis.matchedText,
+    occurrenceType: occurrenceType.value,
+    occurrenceDescription: occurrenceDescription.value,
+    inspectionDate: inspectionDate.value,
     extractedText: normalizePdfText(rawText),
     extractionMethod: "PDF_TEXT",
     confidence: {
@@ -290,6 +332,9 @@ export function extractRncInformation(
       contract: structuredContract ? "HIGH" : hasStructuredTables ? "LOW" : contract.confidence,
       analysisReviewer: structuredReviewer ? "HIGH" : hasStructuredTables ? "LOW" : analysisReviewer.confidence,
       analysisStatus: analysis.confidence,
+      occurrenceType: occurrenceType.confidence,
+      occurrenceDescription: occurrenceDescription.confidence,
+      inspectionDate: inspectionDate.confidence,
     },
   };
 }

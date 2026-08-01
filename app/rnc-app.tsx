@@ -7,7 +7,7 @@ type Work = { id: number; name: string };
 type Rnc = {
   id: number; workId: number; workName: string; number: string; year: number;
   description: string; type: string; receivedAt: string | null; dueAt: string | null;
-  sentAt: string | null; returnedAt: string | null; status: string; notes: string;
+  sentAt: string | null; returnedAt: string | null; inspectionDate: string | null; status: string; notes: string;
   responseOwner: string; inspectionOwner: string; contract: string; analysisOwner: string; updatedAt: string;
   fieldSources: string; fieldConfidence: string; manualFields: string; sourceSummary: string;
 };
@@ -29,12 +29,12 @@ type OutlookStatus = {
 type AccessUser = { name: string; email: string; role: "admin" | "drafter" | "reviewer_approver" };
 
 const statusOptions = ["Recebida", "Em elaboração", "Respondida", "Aprovada", "Reprovada", "Reaberta", "Retorno recebido — status a confirmar", "Não identificado"];
-const typeOptions = ["Segurança do Trabalho", "Ambiental", "Qualidade", "Projeto", "Execução", "Documental", "Outro", "A classificar"];
+const defaultTypeOptions = ["Segurança do Trabalho", "Ambiental", "Qualidade", "Projeto", "Execução", "Documental", "Outro", "A classificar"];
 const PAGE_SIZE = 20;
 const labelByField: Record<string, string> = {
   registro: "Registro", workId: "Obra", number: "Nº RNC", year: "Ano",
   description: "Descrição", type: "Tipo", receivedAt: "Recebimento", dueAt: "Prazo",
-  sentAt: "Envio", returnedAt: "Retorno", status: "Status", notes: "Observações",
+  sentAt: "Envio", returnedAt: "Retorno", inspectionDate: "Data da inspeção", status: "Status", notes: "Observações",
   responseOwner: "Responsável pela resposta", analysisOwner: "Responsável pela análise",
   inspectionOwner: "Responsável fiscal pela inspeção", contract: "Contrato",
 };
@@ -134,6 +134,7 @@ export function RncApp() {
   const [directive, setDirective] = useState("");
   const [updatedLabel, setUpdatedLabel] = useState("Carregando…");
   const [accessUser, setAccessUser] = useState<AccessUser | null>(null);
+  const [typeOptions, setTypeOptions] = useState(defaultTypeOptions);
 
   async function load() {
     setBusy(true);
@@ -183,6 +184,18 @@ export function RncApp() {
       .then((response) => response.json())
       .then((data) => { if (!data.error) setOutlook(data); })
       .catch(() => undefined);
+  }, []);
+  useEffect(() => {
+    let active = true;
+    fetch("/api/rncs/types")
+      .then((response) => response.json())
+      .then((data) => {
+        if (active && data.types && Array.isArray(data.types)) {
+          setTypeOptions(data.types);
+        }
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
   }, []);
 
   async function syncEmails() {
@@ -429,15 +442,15 @@ export function RncApp() {
         <div className="table-meta"><strong>Exibindo {firstRecord}–{lastRecord} de {filtered.length} registros</strong><span>Atualização local: {updatedLabel}</span></div>
         <div className="table-scroll">
           <table>
-            <thead><tr><th>Item</th><th>Nº RNC</th><th>Ano</th><th>Descrição</th><th>Tipo</th><th>Recebimento</th><th>Prazo de envio</th><th>Envio</th><th>Retorno</th><th>Status</th><th>Responsável da área inspecionada</th><th /></tr></thead>
+            <thead><tr><th>Item</th><th>Nº RNC</th><th>Ano</th><th>Descrição</th><th>Tipo</th><th>Recebimento</th><th>Prazo de envio</th><th>Envio</th><th>Retorno</th><th>Data da inspeção</th><th>Status</th><th>Responsável da área inspecionada</th><th /></tr></thead>
             <tbody>
-              {busy && <tr><td colSpan={12} className="empty">Carregando registros…</td></tr>}
-              {!busy && !filtered.length && <tr><td colSpan={12} className="empty"><strong>Nenhuma RNC encontrada</strong><span>Cadastre a primeira RNC ou ajuste os filtros.</span></td></tr>}
+              {busy && <tr><td colSpan={13} className="empty">Carregando registros…</td></tr>}
+              {!busy && !filtered.length && <tr><td colSpan={13} className="empty"><strong>Nenhuma RNC encontrada</strong><span>Cadastre a primeira RNC ou ajuste os filtros.</span></td></tr>}
               {paginated.map((r, index) => <tr key={r.id} className={`row-${urgency(r)}`} onClick={() => openDetails(r)}>
                 <td className="item">{String((page - 1) * PAGE_SIZE + index + 1).padStart(2, "0")}</td><td><strong className="rnc-number">RNC {r.number}</strong><small>{r.workName}</small></td><td>{r.year}</td>
                 <td className="description">{r.description}</td><td><span className="type-tag">{r.type}</span></td><td>{fmt(r.receivedAt)}</td>
                 <td><strong>{fmt(r.dueAt)}</strong><small>{deadlineResult(r).label}</small></td>
-                <td>{fmt(r.sentAt)}</td><td>{fmt(r.returnedAt)}</td><td><span className={`status status-${r.status.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replaceAll(" ", "-")}`}>{r.status}</span></td>
+                <td>{fmt(r.sentAt)}</td><td>{fmt(r.returnedAt)}</td><td>{fmt(r.inspectionDate)}</td><td><span className={`status status-${r.status.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replaceAll(" ", "-")}`}>{r.status}</span></td>
                 <td>{r.responseOwner || "Não identificado"}</td><td className="row-actions">{r.status !== "Aprovada" && <button className="respond-button" onClick={(event) => { event.stopPropagation(); window.location.href = `/responder?rnc=${r.id}`; }}>Responder RNC</button>}<button className="dots" aria-label={`Abrir RNC ${r.number}`}>•••</button></td>
               </tr>)}
             </tbody>
@@ -451,14 +464,14 @@ export function RncApp() {
       </section>
 
       {notice && <button className="toast" onClick={() => setNotice("")}>{notice}<span>×</span></button>}
-      {showForm && <Modal title="Cadastrar nova RNC" onClose={() => setShowForm(false)}><RncForm works={works} onSubmit={createRnc} /></Modal>}
-      {editing && <Modal title={`Editar RNC ${editing.number}`} onClose={() => setEditing(null)}><RncForm works={works} rnc={editing} onSubmit={saveRnc} /></Modal>}
+      {showForm && <Modal title="Cadastrar nova RNC" onClose={() => setShowForm(false)}><RncForm works={works} typeOptions={typeOptions} onSubmit={createRnc} /></Modal>}
+      {editing && <Modal title={`Editar RNC ${editing.number}`} onClose={() => setEditing(null)}><RncForm works={works} typeOptions={typeOptions} rnc={editing} onSubmit={saveRnc} /></Modal>}
       {selected && <aside className="drawer">
         <div className="drawer-head"><div><span className="eyebrow">{selected.workName}</span><h2>RNC {selected.number}/{selected.year}</h2></div><button onClick={() => setSelected(null)}>×</button></div>
         <div className="drawer-body">
           <span className={`status status-${selected.status.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replaceAll(" ", "-")}`}>{selected.status}</span>
           <h3>{selected.description}</h3>
-          <dl><div><dt>Tipo</dt><dd>{selected.type}</dd><small>{sourceFor(selected, "type")}</small><small className="confidence">{confidenceFor(selected, "type")}</small></div><div><dt>Recebimento</dt><dd>{fmt(selected.receivedAt)}</dd><small>{sourceFor(selected, "receivedAt")}</small><small className="confidence">{confidenceFor(selected, "receivedAt")}</small></div><div><dt>Prazo</dt><dd>{fmt(selected.dueAt)}</dd></div><div><dt>Envio</dt><dd>{fmt(selected.sentAt)}</dd><small>{sourceFor(selected, "sentAt")}</small><small className="confidence">{confidenceFor(selected, "sentAt")}</small></div><div><dt>Retorno</dt><dd>{fmt(selected.returnedAt)}</dd><small>{sourceFor(selected, "returnedAt")}</small><small className="confidence">{confidenceFor(selected, "returnedAt")}</small></div><div><dt>Status</dt><dd>{selected.status}</dd><small>{sourceFor(selected, "status")}</small><small className="confidence">{confidenceFor(selected, "status")}</small></div><div><dt>Responsável da área inspecionada</dt><dd>{selected.responseOwner || "Não identificado"}</dd><small>{sourceFor(selected, "responseOwner")}</small><small className="confidence">{confidenceFor(selected, "responseOwner")}</small></div><div><dt>Responsável fiscal pela inspeção</dt><dd>{selected.inspectionOwner || "Não identificado"}</dd><small>{sourceFor(selected, "inspectionOwner")}</small><small className="confidence">{confidenceFor(selected, "inspectionOwner")}</small></div><div><dt>Contrato</dt><dd>{selected.contract || "Não identificado"}</dd><small>{sourceFor(selected, "contract")}</small></div>{selected.analysisOwner && <div><dt>Resp. pela análise</dt><dd>{selected.analysisOwner}</dd></div>}</dl>
+          <dl><div><dt>Tipo</dt><dd>{selected.type}</dd><small>{sourceFor(selected, "type")}</small><small className="confidence">{confidenceFor(selected, "type")}</small></div><div><dt>Recebimento</dt><dd>{fmt(selected.receivedAt)}</dd><small>{sourceFor(selected, "receivedAt")}</small><small className="confidence">{confidenceFor(selected, "receivedAt")}</small></div><div><dt>Prazo</dt><dd>{fmt(selected.dueAt)}</dd></div><div><dt>Envio</dt><dd>{fmt(selected.sentAt)}</dd><small>{sourceFor(selected, "sentAt")}</small><small className="confidence">{confidenceFor(selected, "sentAt")}</small></div><div><dt>Retorno</dt><dd>{fmt(selected.returnedAt)}</dd><small>{sourceFor(selected, "returnedAt")}</small><small className="confidence">{confidenceFor(selected, "returnedAt")}</small></div><div><dt>Data da inspeção</dt><dd>{fmt(selected.inspectionDate)}</dd><small>{sourceFor(selected, "inspectionDate")}</small><small className="confidence">{confidenceFor(selected, "inspectionDate")}</small></div><div><dt>Status</dt><dd>{selected.status}</dd><small>{sourceFor(selected, "status")}</small><small className="confidence">{confidenceFor(selected, "status")}</small></div><div><dt>Responsável da área inspecionada</dt><dd>{selected.responseOwner || "Não identificado"}</dd><small>{sourceFor(selected, "responseOwner")}</small><small className="confidence">{confidenceFor(selected, "responseOwner")}</small></div><div><dt>Responsável fiscal pela inspeção</dt><dd>{selected.inspectionOwner || "Não identificado"}</dd><small>{sourceFor(selected, "inspectionOwner")}</small><small className="confidence">{confidenceFor(selected, "inspectionOwner")}</small></div><div><dt>Contrato</dt><dd>{selected.contract || "Não identificado"}</dd><small>{sourceFor(selected, "contract")}</small></div>{selected.analysisOwner && <div><dt>Resp. pela análise</dt><dd>{selected.analysisOwner}</dd></div>}</dl>
           {conflicts.some((item) => item.status === "open") && <section className="conflict"><strong>Informações divergentes encontradas</strong><p>Revise os dados candidatos e selecione manualmente o valor correto.</p>{conflicts.filter((item) => item.status === "open").map((item) => <small key={item.id}>{item.field}: {JSON.parse(item.candidateValues).join(" · ")}</small>)}</section>}
           <section className="notes"><h4>Observações internas</h4><p>{selected.notes || "Nenhuma observação registrada."}</p></section>
           <section className="timeline"><h4>Dossiê e histórico oficial de e-mails</h4>{emails.length ? emails.map((event) => <div className="timeline-item" key={`email-${event.id}`}><i /><div><strong>{event.eventType.replaceAll("_", " ")}</strong><p>{event.subject}</p><small>{fmt(event.occurredAt)} · {event.folderName || "Outlook"}</small><small>Vínculo {"★".repeat(event.associationConfidence || 0)}{"☆".repeat(5 - (event.associationConfidence || 0))}{event.conversationId ? " · Conversation ID confirmado" : ""}</small>
@@ -508,7 +521,7 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
   return <div className="modal"><div className="modal-head"><h2>{title}</h2><button onClick={onClose}>×</button></div>{children}</div>;
 }
 
-function RncForm({ works, rnc, onSubmit }: { works: Work[]; rnc?: Rnc; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+function RncForm({ works, typeOptions, rnc, onSubmit }: { works: Work[]; typeOptions: string[]; rnc?: Rnc; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
   const today = new Date().toISOString().slice(0, 10);
   const onlyWork = works[0];
   return <form className="rnc-form" onSubmit={onSubmit}>

@@ -45,6 +45,7 @@ export async function GET(request: Request) {
         dueAt: rncs.dueAt,
         sentAt: rncs.sentAt,
         returnedAt: rncs.returnedAt,
+        inspectionDate: rncs.inspectionDate,
         status: rncs.status,
         notes: rncs.notes,
         responseOwner: rncs.responseOwner,

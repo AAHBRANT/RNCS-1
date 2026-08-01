@@ -80,11 +80,16 @@ export function sessionFromRequest(request: Request) {
   return parseSession(cookieValue(request, SESSION_COOKIE));
 }
 
+function normalizeType(value: string) {
+  return value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
 export function canAccessType(session: AccessSession, type: string) {
-  return session.role === "admin"
-    || session.canViewAll
-    || session.allowedTypes.includes("*")
-    || session.allowedTypes.includes(type);
+  if (session.role === "admin" || session.canViewAll || session.allowedTypes.includes("*")) {
+    return true;
+  }
+  const normalizedType = normalizeType(type);
+  return session.allowedTypes.some((allowed) => normalizeType(allowed) === normalizedType);
 }
 
 export function canEditRnc(session: AccessSession) {
