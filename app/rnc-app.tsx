@@ -1,9 +1,9 @@
 "use client";
 
-import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Sidebar } from "./components/sidebar";
 
-type Work = { id: number; name: string };
+export type Work = { id: number; name: string };
 type Rnc = {
   id: number; workId: number; workName: string; number: string; year: number;
   description: string; type: string; receivedAt: string | null; dueAt: string | null;
@@ -21,12 +21,12 @@ type AttachmentAudit = {
   matchedStatusText?: string | null; processedAt?: string;
 };
 type Conflict = { id: number; field: string; candidateValues: string; status: string };
-type OutlookStatus = {
+export type OutlookStatus = {
   configured: boolean;
   connected: boolean;
   connection?: { lastSyncAt?: string | null; lastSyncMessage?: string | null };
 };
-type AccessUser = { name: string; email: string; role: "admin" | "drafter" | "reviewer_approver" };
+export type AccessUser = { name: string; email: string; role: "admin" | "drafter" | "reviewer_approver" };
 
 const statusOptions = ["Recebida", "Em elaboração", "Respondida", "Aprovada", "Reprovada", "Reaberta", "Retorno recebido — status a confirmar", "Não identificado"];
 const defaultTypeOptions = ["Segurança do Trabalho", "Ambiental", "Qualidade", "Projeto", "Execução", "Documental", "Outro", "A classificar"];
@@ -114,6 +114,7 @@ function urgency(rnc: Rnc) {
 export function RncApp() {
   const [works, setWorks] = useState<Work[]>([]);
   const [rows, setRows] = useState<Rnc[]>([]);
+  const [activeWorkId, setActiveWorkId] = useState<number | null>(null);
   const [status, setStatus] = useState("all");
   const [type, setType] = useState("all");
   const [year, setYear] = useState("all");
@@ -145,6 +146,7 @@ export function RncApp() {
       setWorks(data.works);
       setRows(data.rncs);
       setAccessUser(data.user || null);
+      setActiveWorkId(data.activeWorkId || null);
       setUpdatedLabel(new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date()));
     }
     setBusy(false);
@@ -387,28 +389,12 @@ export function RncApp() {
   }
 
   const years = [...new Set(rows.map((r) => r.year))].sort((a, b) => b - a);
+  const activeWork = activeWorkId ? works.find((w) => w.id === activeWorkId) : null;
 
   return (
-    <main>
-      <header className="topbar">
-        <div className="brand"><Image className="brand-mark" src="/favicon-rnc.png" alt="RNC" width={39} height={39} priority /><div><strong>Controle de RNC</strong><small>Gestão de não conformidades</small></div></div>
-        <div className="header-actions">
-          {accessUser && <span className="user-chip"><strong>{accessUser.name}</strong><small>{accessUser.role === "admin" ? "Administradora" : accessUser.role === "drafter" ? "Elaborador" : "Revisor/Aprovador"}</small></span>}
-          <span className="sync"><i /> {outlook.connected ? "Outlook conectado" : "Operação manual"}</span>
-          <button className="button secondary" onClick={() => { window.location.href = "/responder"; }}>Elaborar respostas</button>
-          <button
-            className="button secondary"
-            onClick={syncEmails}
-            disabled={syncing || (!outlook.configured && !outlook.connected)}
-            title={!outlook.configured ? "Configure as credenciais Microsoft na Vercel" : undefined}
-          >
-            {syncing ? "Atualizando…" : outlook.connected ? "↻ Atualizar e-mails" : "Conectar Outlook"}
-          </button>
-          {accessUser?.role === "admin" && <button className="button primary" onClick={() => setShowForm(true)}>＋ Nova RNC</button>}
-          <a className="logout-link" href="/api/auth/logout">Sair</a>
-        </div>
-      </header>
-
+    <div className="app-shell">
+      <Sidebar activeUser={accessUser} activeWorkName={activeWork?.name || null} canCreateRnc={accessUser?.role === "admin"} outlook={outlook} syncing={syncing} onSync={syncEmails} onNewRnc={() => setShowForm(true)} />
+      <main className="app-main">
       <section className="page-heading">
         <div><p className="eyebrow">Visão geral</p><h1>Relatórios de Não Conformidade</h1><p>Acompanhe prazos, respostas e retornos da Supervisão.</p></div>
         <div className="export-actions"><button onClick={exportExcel}>↓ Excel</button><button onClick={() => window.print()}>↓ PDF</button></div>
@@ -464,8 +450,8 @@ export function RncApp() {
       </section>
 
       {notice && <button className="toast" onClick={() => setNotice("")}>{notice}<span>×</span></button>}
-      {showForm && <Modal title="Cadastrar nova RNC" onClose={() => setShowForm(false)}><RncForm works={works} typeOptions={typeOptions} onSubmit={createRnc} /></Modal>}
-      {editing && <Modal title={`Editar RNC ${editing.number}`} onClose={() => setEditing(null)}><RncForm works={works} typeOptions={typeOptions} rnc={editing} onSubmit={saveRnc} /></Modal>}
+      {showForm && <Modal title="Cadastrar nova RNC" onClose={() => setShowForm(false)}><RncForm works={works} typeOptions={typeOptions} activeWorkId={activeWorkId} onSubmit={createRnc} /></Modal>}
+      {editing && <Modal title={`Editar RNC ${editing.number}`} onClose={() => setEditing(null)}><RncForm works={works} typeOptions={typeOptions} rnc={editing} activeWorkId={activeWorkId} onSubmit={saveRnc} /></Modal>}
       {selected && <aside className="drawer">
         <div className="drawer-head"><div><span className="eyebrow">{selected.workName}</span><h2>RNC {selected.number}/{selected.year}</h2></div><button onClick={() => setSelected(null)}>×</button></div>
         <div className="drawer-body">
@@ -497,7 +483,8 @@ export function RncApp() {
         </div>
       </Modal>}
       {(selected || editing || showForm || responding) && <div className="backdrop" onClick={() => { setSelected(null); setEditing(null); setShowForm(false); setResponding(null); }} />}
-    </main>
+      </main>
+    </div>
   );
 }
 
@@ -510,11 +497,11 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
   return <div className="modal"><div className="modal-head"><h2>{title}</h2><button onClick={onClose}>×</button></div>{children}</div>;
 }
 
-function RncForm({ works, typeOptions, rnc, onSubmit }: { works: Work[]; typeOptions: string[]; rnc?: Rnc; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+function RncForm({ works, typeOptions, rnc, activeWorkId, onSubmit }: { works: Work[]; typeOptions: string[]; rnc?: Rnc; activeWorkId: number | null; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
   const today = new Date().toISOString().slice(0, 10);
-  const onlyWork = works[0];
+  const defaultWork = activeWorkId ? works.find((w) => w.id === activeWorkId) : works[0];
   return <form className="rnc-form" onSubmit={onSubmit}>
-    <label className="span-2">Obra<input value={onlyWork?.name || rnc?.workName || "Parque Socioambiental do Roger – Fase II"} disabled /><input type="hidden" name="workId" value={onlyWork?.id || rnc?.workId || ""} /></label>
+    <label className="span-2">Obra<input value={defaultWork?.name || rnc?.workName || ""} disabled /><input type="hidden" name="workId" value={defaultWork?.id || rnc?.workId || ""} /></label>
     <label>Nº RNC<input name="number" defaultValue={rnc?.number} inputMode="numeric" placeholder="096" required /></label>
     <label>Ano<input name="year" defaultValue={rnc?.year || new Date().getFullYear()} type="number" min="2000" max="2100" required /></label>
     <label className="span-2">Descrição<input name="description" defaultValue={rnc?.description} placeholder="Descreva a não conformidade" /></label>

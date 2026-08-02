@@ -1,10 +1,8 @@
 import { and, desc, eq } from "drizzle-orm";
 import { ensureDatabase, getDb } from "../../../db";
 import { auditLog, rncs, works } from "../../../db/schema";
-import { accessControlEnabled, canAccessType, canEditRnc, forbidden, sessionFromRequest, unauthorized } from "../../../lib/access-control";
+import { accessControlEnabled, canAccessType, canAccessWork, canEditRnc, forbidden, sessionFromRequest, unauthorized } from "../../../lib/access-control";
 import { enforceRateLimit } from "../../../lib/rate-limit";
-
-const ONLY_WORK = "Parque Socioambiental do Roger – Fase II";
 
 const editableFields = [
   "workId", "number", "year", "description", "type", "receivedAt", "dueAt",
@@ -61,8 +59,11 @@ export async function GET(request: Request) {
     ]);
     return Response.json({
       works: workRows,
-      rncs: rncRows.filter((rnc) => canAccessType(session, rnc.type)),
+      rncs: rncRows.filter(
+        (rnc) => canAccessType(session, rnc.type) && (session.activeWorkId === null || rnc.workId === session.activeWorkId) && canAccessWork(session, rnc.workId),
+      ),
       user: accessControlEnabled() ? session : null,
+      activeWorkId: session.activeWorkId,
     });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Erro ao carregar dados." }, { status: 500 });
@@ -87,10 +88,14 @@ export async function POST(request: Request) {
     if (!body.workId || !number || !body.year) {
       return Response.json({ error: "Obra, número e ano são obrigatórios." }, { status: 400 });
     }
+    const workId = Number(body.workId);
+    if (!canAccessWork(session, workId)) {
+      return forbidden("Você não tem permissão para criar RNCs nesta obra.");
+    }
     const outlookAudit = body.source === "outlook-browser-audit";
     const db = getDb();
     const [created] = await db.insert(rncs).values({
-      workId: Number(body.workId),
+      workId,
       number,
       year: Number(body.year),
       description: String(body.description || "Descrição não identificada"),
@@ -160,6 +165,12 @@ export async function PATCH(request: Request) {
     const db = getDb();
     const [current] = await db.select().from(rncs).where(eq(rncs.id, id)).limit(1);
     if (!current) return Response.json({ error: "RNC não encontrada." }, { status: 404 });
+    if (!canAccessWork(session, current.workId)) {
+      return forbidden("Você não tem permissão para editar RNCs nesta obra.");
+    }
+    if (body.workId && Number(body.workId) !== current.workId && !canAccessWork(session, Number(body.workId))) {
+      return forbidden("Você não tem permissão para mover RNCs para esta obra.");
+    }
 
     const changes: Record<string, string | number | null> = {};
     const auditRows: Array<typeof auditLog.$inferInsert> = [];

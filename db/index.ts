@@ -238,6 +238,7 @@ async function initializeDatabaseOnce() {
     email TEXT NOT NULL UNIQUE,
     role TEXT NOT NULL,
     allowed_types TEXT NOT NULL DEFAULT '[]',
+    allowed_works TEXT NOT NULL DEFAULT '[]',
     can_view_all BOOLEAN NOT NULL DEFAULT FALSE,
     active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -249,15 +250,16 @@ async function initializeDatabaseOnce() {
     window_start TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMPTZ NOT NULL
   )`;
-  await sql`INSERT INTO access_users (name, email, role, allowed_types, can_view_all, active)
+  await sql`ALTER TABLE access_users ADD COLUMN IF NOT EXISTS allowed_works TEXT NOT NULL DEFAULT '[]'`;
+  await sql`INSERT INTO access_users (name, email, role, allowed_types, allowed_works, can_view_all, active)
     VALUES
-      ('Isabella Marques', 'isabella.marques@aahbrant.com', 'admin', '["*"]', TRUE, TRUE),
-      ('Pedro Ferreira', 'pedro.ferreira@aahbrant.com', 'reviewer_approver', '["*"]', TRUE, TRUE),
-      ('Rafaela Macedo', 'rafaela.macedo@aahbrant.com', 'reviewer_approver', '["*"]', TRUE, TRUE),
-      ('Samuel Brumati', 'samuel.brumati@aahbrant.com', 'reviewer_approver', '["*"]', TRUE, TRUE),
-      ('João Neto', 'joao.neto@aahbrant.com', 'reviewer_approver', '["*"]', TRUE, TRUE),
-      ('José Bruno Gomes', 'jose.gomes@aahbrant.com', 'drafter', '["Segurança do Trabalho"]', FALSE, TRUE),
-      ('Italo Monteiro', 'italo.monteiro@aahbrant.com', 'drafter', '["*"]', TRUE, TRUE)
+      ('Isabella Marques', 'isabella.marques@aahbrant.com', 'admin', '["*"]', '["*"]', TRUE, TRUE),
+      ('Pedro Ferreira', 'pedro.ferreira@aahbrant.com', 'reviewer_approver', '["*"]', '["*"]', TRUE, TRUE),
+      ('Rafaela Macedo', 'rafaela.macedo@aahbrant.com', 'reviewer_approver', '["*"]', '["*"]', TRUE, TRUE),
+      ('Samuel Brumati', 'samuel.brumati@aahbrant.com', 'reviewer_approver', '["*"]', '["*"]', TRUE, TRUE),
+      ('João Neto', 'joao.neto@aahbrant.com', 'reviewer_approver', '["*"]', '["*"]', TRUE, TRUE),
+      ('José Bruno Gomes', 'jose.gomes@aahbrant.com', 'drafter', '["Segurança do Trabalho"]', '["*"]', FALSE, TRUE),
+      ('Italo Monteiro', 'italo.monteiro@aahbrant.com', 'drafter', '["*"]', '["*"]', TRUE, TRUE)
     ON CONFLICT (email) DO UPDATE SET
       name = EXCLUDED.name,
       role = EXCLUDED.role,
@@ -265,6 +267,23 @@ async function initializeDatabaseOnce() {
       can_view_all = EXCLUDED.can_view_all,
       active = TRUE,
       updated_at = CURRENT_TIMESTAMP`;
+  await sql`WITH claimed AS (
+    INSERT INTO app_migrations (key)
+    VALUES ('2026-08-02-backfill-allowed-works-existing-users')
+    ON CONFLICT (key) DO NOTHING
+    RETURNING key
+  )
+  UPDATE access_users SET allowed_works = '["*"]'
+  WHERE EXISTS (SELECT 1 FROM claimed)
+    AND email IN (
+      'isabella.marques@aahbrant.com',
+      'pedro.ferreira@aahbrant.com',
+      'rafaela.macedo@aahbrant.com',
+      'samuel.brumati@aahbrant.com',
+      'joao.neto@aahbrant.com',
+      'jose.gomes@aahbrant.com',
+      'italo.monteiro@aahbrant.com'
+    )`;
   await sql`UPDATE rncs SET
       type = 'Execução',
       field_sources = jsonb_set(field_sources::jsonb, '{type}', '"Corrigido manualmente — falha construtiva"'::jsonb)::text,
@@ -276,7 +295,9 @@ async function initializeDatabaseOnce() {
       updated_at = CURRENT_TIMESTAMP
     WHERE number IN ('268', '269') AND year = 2026`;
   await sql`INSERT INTO works (name, active)
-    VALUES ('Parque Socioambiental do Roger – Fase II', TRUE)
+    VALUES
+      ('Parque Socioambiental do Roger – Fase II', TRUE),
+      ('Compl. Beira Rio', TRUE)
     ON CONFLICT (name) DO UPDATE SET active = TRUE`;
   await sql`UPDATE rncs
     SET work_id = (SELECT id FROM works WHERE name = 'Parque Socioambiental do Roger – Fase II')
@@ -284,20 +305,18 @@ async function initializeDatabaseOnce() {
       SELECT id FROM works
       WHERE name IN ('Parque do Roger - Fase II', 'Parque Socioambiental do Roger')
     )`;
-  await sql`DELETE FROM rnc_conflicts WHERE rnc_id IN (
-    SELECT r.id FROM rncs r JOIN works w ON w.id = r.work_id
-    WHERE w.name <> 'Parque Socioambiental do Roger – Fase II'
-  )`;
-  await sql`DELETE FROM email_events WHERE rnc_id IN (
-    SELECT r.id FROM rncs r JOIN works w ON w.id = r.work_id
-    WHERE w.name <> 'Parque Socioambiental do Roger – Fase II'
-  )`;
-  await sql`DELETE FROM audit_log WHERE rnc_id IN (
-    SELECT r.id FROM rncs r JOIN works w ON w.id = r.work_id
-    WHERE w.name <> 'Parque Socioambiental do Roger – Fase II'
-  )`;
-  await sql`DELETE FROM rncs WHERE work_id IN (
-    SELECT id FROM works WHERE name <> 'Parque Socioambiental do Roger – Fase II'
-  )`;
-  await sql`DELETE FROM works WHERE name <> 'Parque Socioambiental do Roger – Fase II'`;
+  await sql`DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM app_migrations WHERE key = '2026-08-02-configure-work-permissions-by-user') THEN
+    UPDATE access_users SET allowed_works = jsonb_build_array(
+      (SELECT id::text FROM works WHERE name = 'Parque Socioambiental do Roger – Fase II')
+    )::text
+    WHERE email IN ('pedro.ferreira@aahbrant.com', 'jose.gomes@aahbrant.com', 'italo.monteiro@aahbrant.com');
+
+    UPDATE access_users SET allowed_works = '["*"]'
+    WHERE email IN ('rafaela.macedo@aahbrant.com', 'samuel.brumati@aahbrant.com', 'joao.neto@aahbrant.com');
+
+    INSERT INTO app_migrations (key) VALUES ('2026-08-02-configure-work-permissions-by-user');
+  END IF;
+END $$`;
 }
