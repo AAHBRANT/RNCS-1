@@ -240,23 +240,120 @@ function extractAnalysisStatus(text: string): {
   return { status: "STATUS_A_CONFIRMAR", matchedText: null, confidence: "LOW" };
 }
 
+function extractOccurrenceTypeAndDescription(text: string): {
+  type: string | null;
+  description: string | null;
+} {
+  // Detecta padrão: "CARACTERIZAÇÃO DA OCORRÊNCIA" e "TIPO DE OCORRÊNCIA" lado a lado
+  // Quando ocorrem assim, a descrição e o tipo ficam no mesmo bloco, separados pelo último ponto final
+  const bothTitlesPattern = /CARACTERIZA[CÇ][ÃA]O\s+DA\s+OCORR[ÊE]NCIA\s+TIPO\s+DE\s+OCORR[ÊE]NCIA/i;
+
+  if (!bothTitlesPattern.test(text)) {
+    return { type: null, description: null };
+  }
+
+  // Procurar o bloco: começando após os títulos combinados até o próximo título conhecido
+  // Usa [\s\S] em vez de . com flag "s" para compatibilidade com ES2017
+  const blockPattern = /CARACTERIZA[CÇ][ÃA]O\s+DA\s+OCORR[ÊE]NCIA\s+TIPO\s+DE\s+OCORR[ÊE]NCIA\s*\n?\s*([\s\S]+?)(?:RESPONSÁVEL\s+FISCAL|RESPONSÁVEL\s+DA\s+ÁREA|DATA\s+DA\s+INSPE|$)/i;
+  const blockMatch = text.match(blockPattern);
+
+  if (!blockMatch || !blockMatch[1]) {
+    return { type: null, description: null };
+  }
+
+  // Juntar o bloco em uma string única (remover quebras de linha, colapsar espaços)
+  let fullBlock = blockMatch[1]
+    .replace(/\n/g, " ")
+    .replace(/\t/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // Encontrar o ÚLTIMO ponto final
+  const lastDotIndex = fullBlock.lastIndexOf(".");
+  if (lastDotIndex === -1) {
+    // Sem ponto final, não consegue separar
+    return { type: null, description: null };
+  }
+
+  // Separar description e type
+  const description = fullBlock.substring(0, lastDotIndex + 1).trim();
+  const typeText = fullBlock.substring(lastDotIndex + 1).trim();
+
+  return {
+    description: description || null,
+    type: typeText || null,
+  };
+}
+
+const VALID_OCCURRENCE_TYPES = ["ENGENHARIA", "SOCIAL", "MEIO AMBIENTE", "SEGURANÇA DO TRABALHO"];
+
+function normalizeTypeValue(value: string): string {
+  return value.trim().toUpperCase();
+}
+
+function isValidOccurrenceType(value: string | null): boolean {
+  if (!value) return false;
+  const normalized = normalizeTypeValue(value);
+  return VALID_OCCURRENCE_TYPES.includes(normalized);
+}
+
 function extractOccurrenceType(tables: PdfTable[], layoutText: string, rawText: string): { value: string | null; confidence: ExtractionConfidence } {
   const text = layoutText || rawText;
+
+  // Cenário 1: Títulos lado a lado (CARACTERIZAÇÃO + TIPO na mesma linha)
+  // Nesse caso, a extração é mais complexa e necessita separar pelo último ponto
+  const combined = extractOccurrenceTypeAndDescription(text);
+  if (combined.type) {
+    const normalized = normalizeTypeValue(combined.type);
+    if (isValidOccurrenceType(normalized)) {
+      return { value: normalized, confidence: "HIGH" };
+    }
+    // Tipo extraído não é válido — retorna null
+    return { value: null, confidence: "LOW" };
+  }
+
+  // Cenário 2: Tentativa com funções estruturadas
   const value = valueImmediatelyBelow(tables, "TIPO DE OCORRÊNCIA")
     || valueFromLayoutColumn(text, "TIPO DE OCORRÊNCIA");
-  if (value) return { value: value.trim(), confidence: "HIGH" };
+  if (value) {
+    const normalized = normalizeTypeValue(value);
+    if (isValidOccurrenceType(normalized)) {
+      return { value: normalized, confidence: "HIGH" };
+    }
+    return { value: null, confidence: "LOW" };
+  }
+
+  // Cenário 3: Regex simples (fallback)
   const match = text.match(/TIPO\s+DE\s+OCORR[ÊE]NCIA\s*:?\s*\n\s*([^\n\t]+)/i);
-  if (match?.[1]) return { value: match[1].trim(), confidence: "HIGH" };
+  if (match?.[1]) {
+    const normalized = normalizeTypeValue(match[1]);
+    if (isValidOccurrenceType(normalized)) {
+      return { value: normalized, confidence: "HIGH" };
+    }
+    return { value: null, confidence: "LOW" };
+  }
+
   return { value: null, confidence: "LOW" };
 }
 
 function extractOccurrenceDescription(tables: PdfTable[], layoutText: string, rawText: string): { value: string | null; confidence: ExtractionConfidence } {
   const text = layoutText || rawText;
+
+  // Cenário 1: Títulos lado a lado (CARACTERIZAÇÃO + TIPO na mesma linha)
+  const combined = extractOccurrenceTypeAndDescription(text);
+  if (combined.description) {
+    return { value: combined.description, confidence: "HIGH" };
+  }
+
+  // Cenário 2: Tentativa com funções estruturadas
   const value = valueImmediatelyBelow(tables, "CARACTERIZAÇÃO DA OCORRÊNCIA")
     || valueFromLayoutColumn(text, "CARACTERIZAÇÃO DA OCORRÊNCIA");
   if (value) return { value: value.trim(), confidence: "HIGH" };
+
+  // Cenário 3: Regex simples (fallback)
   const match = text.match(/CARACTERIZA[CÇ][ÃA]O\s+DA\s+OCORR[ÊE]NCIA\s*:?\s*\n\s*([^\n\t]+)/i);
   if (match?.[1]) return { value: match[1].trim(), confidence: "HIGH" };
+
   return { value: null, confidence: "LOW" };
 }
 

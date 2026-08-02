@@ -261,7 +261,7 @@ test("extrai os 3 campos novos: TIPO DE OCORRÊNCIA, CARACTERIZAÇÃO e DATA DA 
   const information = extractRncInformation([
     "RNC 159/2026",
     "TIPO DE OCORRÊNCIA",
-    "Falha Construtiva",
+    "ENGENHARIA",
     "CARACTERIZAÇÃO DA OCORRÊNCIA",
     "Presença de infiltração em revestimento de gesso da arquibancada",
     "DATA DA INSPEÇÃO",
@@ -269,7 +269,7 @@ test("extrai os 3 campos novos: TIPO DE OCORRÊNCIA, CARACTERIZAÇÃO e DATA DA 
     "RESPONSÁVEL DA ÁREA INSPECIONADA",
     "ISABELLA MARQUES",
   ].join("\n"));
-  assert.equal(information.occurrenceType, "Falha Construtiva");
+  assert.equal(information.occurrenceType, "ENGENHARIA");
   assert.equal(information.occurrenceDescription, "Presença de infiltração em revestimento de gesso da arquibancada");
   assert.equal(information.inspectionDate, "2026-03-12");
   assert.equal(information.confidence.occurrenceType, "HIGH");
@@ -281,10 +281,10 @@ test("extrai os campos novos de tabela estruturada com múltiplas linhas", () =>
   const information = extractRncInformation([
     "Outros dados do RNC",
     "TIPO DE OCORRÊNCIA\tCARACTERIZAÇÃO DA OCORRÊNCIA\tDATA DA INSPEÇÃO",
-    "Execução\tFissura em fundação\t25/06/2026",
+    "SOCIAL\tFissura em fundação\t25/06/2026",
     "Valores extras ignorados\tMais dados\tIgnorado",
   ].join("\n"));
-  assert.equal(information.occurrenceType, "Execução");
+  assert.equal(information.occurrenceType, "SOCIAL");
   assert.equal(information.occurrenceDescription, "Fissura em fundação");
   assert.equal(information.inspectionDate, "2026-06-25");
 });
@@ -306,27 +306,91 @@ test("detecta resposta enviada via CC na caixa de entrada", () => {
   const OFFICIAL_EMAIL = "contato@jampasustentavel.com";
 
   // Cenário 1: inbox + remetente diferente + OFFICIAL_EMAIL em recipientsList = true (nova regra)
-  const kind1 = "inbox";
-  const sender1 = "joao@aahbrant.com";
-  const recipientsList1 = [OFFICIAL_EMAIL, "outro@email.com"];
+  const kind1: string = "inbox";
+  const sender1: string = "joao@aahbrant.com";
+  const recipientsList1: string[] = [OFFICIAL_EMAIL, "outro@email.com"];
   const officialSent1 = (kind1 === "sent" && recipientsList1.includes(OFFICIAL_EMAIL))
     || (kind1 === "inbox" && sender1 !== OFFICIAL_EMAIL && recipientsList1.includes(OFFICIAL_EMAIL));
   assert.equal(officialSent1, true, "Deveria detectar resposta via CC na inbox");
 
   // Cenário 2: sent + OFFICIAL_EMAIL em recipientsList = true (regra existente)
-  const kind2 = "sent";
-  const sender2 = "conta@aahbrant.com";
-  const recipientsList2 = [OFFICIAL_EMAIL];
+  const kind2: string = "sent";
+  const sender2: string = "conta@aahbrant.com";
+  const recipientsList2: string[] = [OFFICIAL_EMAIL];
   const officialSent2 = (kind2 === "sent" && recipientsList2.includes(OFFICIAL_EMAIL))
     || (kind2 === "inbox" && sender2 !== OFFICIAL_EMAIL && recipientsList2.includes(OFFICIAL_EMAIL));
   assert.equal(officialSent2, true, "Deveria detectar resposta enviada via Itens Enviados");
 
   // Cenário 3: inbox + remetente É OFFICIAL_EMAIL + sem menção em recipientsList = false
   // (entra em officialIncoming, não officialSent)
-  const kind3 = "inbox";
-  const sender3 = OFFICIAL_EMAIL;
-  const recipientsList3 = [];
+  const kind3: string = "inbox";
+  const sender3: string = OFFICIAL_EMAIL;
+  const recipientsList3: string[] = [];
   const officialSent3 = (kind3 === "sent" && recipientsList3.includes(OFFICIAL_EMAIL))
     || (kind3 === "inbox" && sender3 !== OFFICIAL_EMAIL && recipientsList3.includes(OFFICIAL_EMAIL));
   assert.equal(officialSent3, false, "RNC original não deveria ser detectada como oficialSent");
+});
+
+test("extrai TIPO e CARACTERIZAÇÃO quando aparecem como colunas lado a lado (RNC 164 - descrição em múltiplas linhas)", () => {
+  // Padrão real: dois títulos na mesma linha, descrição quebra em múltiplas linhas, tipo na mesma linha da última frase
+  const rncText = `CARACTERIZAÇÃO DA OCORRÊNCIA TIPO DE OCORRÊNCIA
+OXIDAÇÃO NAS BASES DAS QUADRAS DE
+BASQUETE E VÔLEI. ENGENHARIA
+RESPONSÁVEL FISCAL PELA INSPEÇÃO`;
+
+  const information = extractRncInformation(rncText);
+  assert.equal(information.occurrenceType, "ENGENHARIA", "Deveria extrair TIPO como 'ENGENHARIA'");
+  assert.equal(
+    information.occurrenceDescription,
+    "OXIDAÇÃO NAS BASES DAS QUADRAS DE BASQUETE E VÔLEI.",
+    "Deveria extrair CARACTERIZAÇÃO completa incluindo quebras de linha",
+  );
+  assert.equal(information.confidence.occurrenceType, "HIGH");
+  assert.equal(information.confidence.occurrenceDescription, "HIGH");
+});
+
+test("extrai TIPO e CARACTERIZAÇÃO quando aparecem como colunas lado a lado (RNC 268 - tipo em linha própria)", () => {
+  // Padrão real: dois títulos na mesma linha, descrição quebra em múltiplas linhas, tipo em linha própria
+  const rncText = `CARACTERIZAÇÃO DA OCORRÊNCIA TIPO DE OCORRÊNCIA
+NÃO CONFORMIDADES NAS
+ARQUIBANCADAS DO CAMPO DE
+FUTEBOL.
+ENGENHARIA
+RESPONSÁVEL FISCAL PELA INSPEÇÃO`;
+
+  const information = extractRncInformation(rncText);
+  assert.equal(information.occurrenceType, "ENGENHARIA", "Deveria extrair TIPO como 'ENGENHARIA'");
+  assert.equal(
+    information.occurrenceDescription,
+    "NÃO CONFORMIDADES NAS ARQUIBANCADAS DO CAMPO DE FUTEBOL.",
+    "Deveria extrair CARACTERIZAÇÃO completa incluindo quebras de linha",
+  );
+  assert.equal(information.confidence.occurrenceType, "HIGH");
+  assert.equal(information.confidence.occurrenceDescription, "HIGH");
+});
+
+test("retorna null quando o tipo extraído não é um dos 4 valores válidos", () => {
+  // Padrão que causa erro: tipo extraído é texto da descrição ou rótulo, não um dos 4 valores válidos
+  const rncText = `CARACTERIZAÇÃO DA OCORRÊNCIA TIPO DE OCORRÊNCIA
+OXIDAÇÃO NAS BASES DAS QUADRAS DE BASQUETE E VÔLEI. OXIDAÇÃO
+RESPONSÁVEL FISCAL PELA INSPEÇÃO`;
+
+  const information = extractRncInformation(rncText);
+  // "OXIDAÇÃO" não é um dos 4 valores válidos (ENGENHARIA, SOCIAL, MEIO AMBIENTE, SEGURANÇA DO TRABALHO)
+  assert.equal(information.occurrenceType, null, "Deveria retornar null para tipo inválido");
+  assert.equal(information.confidence.occurrenceType, "LOW", "Deveria ter LOW confidence para tipo inválido");
+});
+
+test("aceita os 4 tipos válidos: ENGENHARIA, SOCIAL, MEIO AMBIENTE, SEGURANÇA DO TRABALHO", () => {
+  const validTypes = ["ENGENHARIA", "SOCIAL", "MEIO AMBIENTE", "SEGURANÇA DO TRABALHO"];
+
+  for (const tipo of validTypes) {
+    const rncText = `CARACTERIZAÇÃO DA OCORRÊNCIA TIPO DE OCORRÊNCIA
+Descrição de teste. ${tipo}
+RESPONSÁVEL FISCAL PELA INSPEÇÃO`;
+
+    const information = extractRncInformation(rncText);
+    assert.equal(information.occurrenceType, tipo, `Deveria aceitar tipo "${tipo}"`);
+    assert.equal(information.confidence.occurrenceType, "HIGH", `Tipo "${tipo}" deveria ter HIGH confidence`);
+  }
 });
