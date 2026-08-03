@@ -11,6 +11,8 @@ export type AccessSession = {
   email: string;
   role: AccessRole;
   allowedTypes: string[];
+  allowedWorks: string[];
+  activeWorkId: number | null;
   canViewAll: boolean;
   expiresAt: number;
 };
@@ -25,6 +27,8 @@ const setupSession: AccessSession = {
   email: "",
   role: "admin",
   allowedTypes: ["*"],
+  allowedWorks: ["*"],
+  activeWorkId: null,
   canViewAll: true,
   expiresAt: Number.MAX_SAFE_INTEGER,
 };
@@ -49,6 +53,8 @@ export function createSession(user: typeof accessUsers.$inferSelect) {
     email: user.email,
     role: user.role as AccessRole,
     allowedTypes: JSON.parse(user.allowedTypes || "[]"),
+    allowedWorks: JSON.parse(user.allowedWorks || "[]"),
+    activeWorkId: null,
     canViewAll: user.canViewAll,
     expiresAt: Date.now() + 8 * 60 * 60 * 1000,
   };
@@ -90,6 +96,22 @@ export function canAccessType(session: AccessSession, type: string) {
   }
   const normalizedType = normalizeType(type);
   return session.allowedTypes.some((allowed) => normalizeType(allowed) === normalizedType);
+}
+
+export function canAccessWork(session: AccessSession, workId: number) {
+  if (session.role === "admin" || session.allowedWorks.includes("*")) {
+    return true;
+  }
+  return session.allowedWorks.includes(String(workId));
+}
+
+export function withActiveWork(session: AccessSession, workId: number) {
+  return encryptToken(JSON.stringify({ ...session, activeWorkId: workId }));
+}
+
+export function sessionFromCookieStore(cookieStore: { get(name: string): { value: string } | undefined }) {
+  if (!accessControlEnabled()) return setupSession;
+  return parseSession(cookieStore.get(SESSION_COOKIE)?.value);
 }
 
 export function canEditRnc(session: AccessSession) {

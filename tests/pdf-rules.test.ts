@@ -306,26 +306,26 @@ test("detecta resposta enviada via CC na caixa de entrada", () => {
   const OFFICIAL_EMAIL = "contato@jampasustentavel.com";
 
   // Cenário 1: inbox + remetente diferente + OFFICIAL_EMAIL em recipientsList = true (nova regra)
-  const kind1 = "inbox";
-  const sender1 = "joao@aahbrant.com";
-  const recipientsList1 = [OFFICIAL_EMAIL, "outro@email.com"];
+  const kind1: string = "inbox";
+  const sender1: string = "joao@aahbrant.com";
+  const recipientsList1: string[] = [OFFICIAL_EMAIL, "outro@email.com"];
   const officialSent1 = (kind1 === "sent" && recipientsList1.includes(OFFICIAL_EMAIL))
     || (kind1 === "inbox" && sender1 !== OFFICIAL_EMAIL && recipientsList1.includes(OFFICIAL_EMAIL));
   assert.equal(officialSent1, true, "Deveria detectar resposta via CC na inbox");
 
   // Cenário 2: sent + OFFICIAL_EMAIL em recipientsList = true (regra existente)
-  const kind2 = "sent";
-  const sender2 = "conta@aahbrant.com";
-  const recipientsList2 = [OFFICIAL_EMAIL];
+  const kind2: string = "sent";
+  const sender2: string = "conta@aahbrant.com";
+  const recipientsList2: string[] = [OFFICIAL_EMAIL];
   const officialSent2 = (kind2 === "sent" && recipientsList2.includes(OFFICIAL_EMAIL))
     || (kind2 === "inbox" && sender2 !== OFFICIAL_EMAIL && recipientsList2.includes(OFFICIAL_EMAIL));
   assert.equal(officialSent2, true, "Deveria detectar resposta enviada via Itens Enviados");
 
   // Cenário 3: inbox + remetente É OFFICIAL_EMAIL + sem menção em recipientsList = false
   // (entra em officialIncoming, não officialSent)
-  const kind3 = "inbox";
-  const sender3 = OFFICIAL_EMAIL;
-  const recipientsList3 = [];
+  const kind3: string = "inbox";
+  const sender3: string = OFFICIAL_EMAIL;
+  const recipientsList3: string[] = [];
   const officialSent3 = (kind3 === "sent" && recipientsList3.includes(OFFICIAL_EMAIL))
     || (kind3 === "inbox" && sender3 !== OFFICIAL_EMAIL && recipientsList3.includes(OFFICIAL_EMAIL));
   assert.equal(officialSent3, false, "RNC original não deveria ser detectada como oficialSent");

@@ -174,6 +174,7 @@ export const accessUsers = pgTable("access_users", {
   email: text("email").notNull(),
   role: text("role").notNull(),
   allowedTypes: text("allowed_types").notNull().default("[]"),
+  allowedWorks: text("allowed_works").notNull().default("[]"),
   canViewAll: boolean("can_view_all").notNull().default(false),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
