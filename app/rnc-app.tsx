@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Sidebar } from "./components/sidebar";
+import { deadlineResult, fmt, hasAnsweredStatus, hasBeenAnswered } from "../lib/rnc-deadline";
 
 export type Work = { id: number; name: string };
 type Rnc = {
@@ -39,64 +40,9 @@ const labelByField: Record<string, string> = {
   inspectionOwner: "Responsável fiscal pela inspeção", contract: "Contrato",
 };
 
-function parseLocal(value: string) { return new Date(`${value}T12:00:00`); }
-function fmt(value?: string | null) {
-  if (!value) return "—";
-  const date = value.length === 10 ? parseLocal(value) : new Date(value);
-  return new Intl.DateTimeFormat("pt-BR").format(date);
-}
-
 function attachmentsFromEvent(event: EmailEvent) {
   try { return JSON.parse(event.attachmentMetadata || "[]") as AttachmentAudit[]; }
   catch { return []; }
-}
-function businessDayDelta(fromValue: string, toValue: string) {
-  const from = parseLocal(fromValue); const to = parseLocal(toValue);
-  const direction = to >= from ? 1 : -1; let count = 0; const cursor = new Date(from);
-  while ((direction === 1 && cursor < to) || (direction === -1 && cursor > to)) {
-    cursor.setDate(cursor.getDate() + direction);
-    if (cursor.getDay() !== 0 && cursor.getDay() !== 6) count += direction;
-  }
-  return count;
-}
-function todayInBrazil() {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Sao_Paulo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
-function hasAnsweredStatus(rnc: Rnc) {
-  return [
-    "Respondida",
-    "Aprovada",
-    "Reprovada",
-    "Retorno recebido — status a confirmar",
-  ].includes(rnc.status);
-}
-function hasBeenAnswered(rnc: Rnc) {
-  return Boolean(rnc.sentAt) || hasAnsweredStatus(rnc);
-}
-function deadlineResult(rnc: Rnc) {
-  if (!rnc.dueAt) {
-    return { delta: null, label: "Prazo não identificado" };
-  }
-  const comparison = rnc.sentAt || todayInBrazil();
-  const delta = businessDayDelta(rnc.dueAt, comparison);
-  if (rnc.sentAt) {
-    if (delta === 0) return { delta, label: "Respondida no prazo" };
-    if (delta > 0) return { delta, label: `Respondida com ${delta} ${delta === 1 ? "dia útil" : "dias úteis"} de atraso` };
-    const early = Math.abs(delta);
-    return { delta, label: `Respondida ${early} ${early === 1 ? "dia útil" : "dias úteis"} antes do prazo` };
-  }
-  if (hasAnsweredStatus(rnc)) {
-    return { delta: 0, label: "Respondida — data do envio não identificada" };
-  }
-  if (delta > 0) return { delta, label: `${delta} ${delta === 1 ? "dia útil" : "dias úteis"} em atraso` };
-  if (delta === 0) return { delta, label: "Vence hoje" };
-  const remaining = Math.abs(delta);
-  return { delta, label: `${remaining} ${remaining === 1 ? "dia útil" : "dias úteis"} restantes` };
 }
 function urgency(rnc: Rnc) {
   if (rnc.status === "Aprovada") return "approved";
@@ -219,11 +165,27 @@ export function RncApp() {
         sentDatesCorrected: 0, returnsProcessed: 0, statusesUpdated: 0,
       };
       while (!complete && batches < 500) {
-        const response = await fetch("/api/outlook/sync", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ cursor }),
-        });
+        // A serverless function that times out server-side can drop the connection
+        // without ever sending a response. Without a client-side abort, fetch() waits
+        // forever and the button stays stuck on "Atualizando…" with no error shown.
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 280_000);
+        let response: Response;
+        try {
+          response = await fetch("/api/outlook/sync", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ cursor }),
+            signal: controller.signal,
+          });
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") {
+            throw new Error("Uma etapa da sincronização excedeu o tempo limite do servidor. Clique novamente para continuar de onde parou.");
+          }
+          throw error;
+        } finally {
+          clearTimeout(timeout);
+        }
         const contentType = response.headers.get("content-type") || "";
         const data = contentType.includes("application/json")
           ? await response.json()
@@ -269,9 +231,10 @@ export function RncApp() {
       || (cardFilter === "rejected" && r.status === "Reprovada")
       || (cardFilter === "reopened" && r.status === "Reaberta")
       || (cardFilter === "pendingReview" && r.status === "Retorno recebido — status a confirmar")
-      || (cardFilter === "onTime" && deadline !== null && deadline <= 0)
+      || (cardFilter === "sentOnTime" && hasBeenAnswered(r) && deadline !== null && deadline <= 0)
+      || (cardFilter === "pendingOnTime" && !hasBeenAnswered(r) && deadline !== null && deadline <= 0)
       || (cardFilter === "overdue" && !hasBeenAnswered(r) && (deadline ?? 0) > 0)
-      || (cardFilter === "answeredLate" && !!r.sentAt && (deadline ?? 0) > 0);
+      || (cardFilter === "sentLate" && !!r.sentAt && (deadline ?? 0) > 0);
     return cardMatches && (status === "all" || r.status === status)
       && (type === "all" || r.type === type)
       && (year === "all" || String(r.year) === year)
@@ -297,12 +260,10 @@ export function RncApp() {
     rejected: rows.filter((r) => r.status === "Reprovada").length,
     reopened: rows.filter((r) => r.status === "Reaberta").length,
     pendingReview: rows.filter((r) => r.status === "Retorno recebido — status a confirmar").length,
-    onTime: rows.filter((r) =>
-      (!hasBeenAnswered(r) && deadlineResult(r).delta !== null && deadlineResult(r).delta! <= 0)
-      || (!!r.sentAt && deadlineResult(r).delta !== null && deadlineResult(r).delta! <= 0)
-    ).length,
+    sentOnTime: rows.filter((r) => hasBeenAnswered(r) && deadlineResult(r).delta !== null && deadlineResult(r).delta! <= 0).length,
+    pendingOnTime: rows.filter((r) => !hasBeenAnswered(r) && deadlineResult(r).delta !== null && deadlineResult(r).delta! <= 0).length,
     overdue: rows.filter((r) => !hasBeenAnswered(r) && (deadlineResult(r).delta ?? 0) > 0).length,
-    answeredLate: rows.filter((r) => !!r.sentAt && (deadlineResult(r).delta ?? 0) > 0).length,
+    sentLate: rows.filter((r) => !!r.sentAt && (deadlineResult(r).delta ?? 0) > 0).length,
   }), [rows]);
 
   async function createRnc(event: FormEvent<HTMLFormElement>) {
@@ -393,11 +354,10 @@ export function RncApp() {
 
   return (
     <div className="app-shell">
-      <Sidebar activeUser={accessUser} activeWorkName={activeWork?.name || null} canCreateRnc={accessUser?.role === "admin"} outlook={outlook} syncing={syncing} onSync={syncEmails} onNewRnc={() => setShowForm(true)} />
+      <Sidebar activeUser={accessUser} activeWorkName={activeWork?.name || null} canCreateRnc={accessUser?.role === "admin"} outlook={outlook} syncing={syncing} onSync={syncEmails} onNewRnc={() => setShowForm(true)} onExportExcel={exportExcel} onExportPdf={() => window.print()} />
       <main className="app-main">
       <section className="page-heading">
         <div><p className="eyebrow">Visão geral</p><h1>Relatórios de Não Conformidade</h1><p>Acompanhe prazos, respostas e retornos da Supervisão.</p></div>
-        <div className="export-actions"><button onClick={exportExcel}>↓ Excel</button><button onClick={() => window.print()}>↓ PDF</button></div>
       </section>
 
       <p className="metric-group-label">Situação das RNCs — categorias exclusivas</p>
@@ -412,8 +372,10 @@ export function RncApp() {
       <p className="metric-group-label">Cumprimento do prazo — categorias exclusivas</p>
       <section className="metrics deadline-metrics">
         {[
-          ["Dentro do prazo", stats.onTime, "teal", "onTime"], ["Vencidas", stats.overdue, "red", "overdue"],
-          ["Respondidas com atraso", stats.answeredLate, "orange", "answeredLate"],
+          ["Enviadas dentro do prazo", stats.sentOnTime, "teal", "sentOnTime"],
+          ["Ainda dentro do prazo (não enviadas)", stats.pendingOnTime, "blue", "pendingOnTime"],
+          ["Enviadas fora do prazo", stats.sentLate, "orange", "sentLate"],
+          ["Vencidas sem resposta", stats.overdue, "red", "overdue"],
         ].map(([label, value, tone, filter]) => <button type="button" key={String(label)} aria-pressed={cardFilter === filter} onClick={() => { setCardFilter((current) => current === filter ? "all" : String(filter)); setCurrentPage(1); }} className={`metric ${tone} ${cardFilter === filter ? "active" : ""}`}><span>{label}</span><strong>{value}</strong><div className="metric-line" /></button>)}
       </section>
 
@@ -437,7 +399,7 @@ export function RncApp() {
                 <td className="description">{r.description}</td><td><span className="type-tag">{r.type}</span></td><td>{fmt(r.receivedAt)}</td>
                 <td><strong>{fmt(r.dueAt)}</strong><small>{deadlineResult(r).label}</small></td>
                 <td>{fmt(r.sentAt)}</td><td>{fmt(r.returnedAt)}</td><td>{fmt(r.inspectionDate)}</td><td><span className={`status status-${r.status.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replaceAll(" ", "-")}`}>{r.status}</span></td>
-                <td>{r.responseOwner || "Não identificado"}</td><td className="row-actions">{r.status !== "Aprovada" && <button className="respond-button" onClick={(event) => { event.stopPropagation(); window.location.href = `/responder?rnc=${r.id}`; }}>Responder RNC</button>}<button className="dots" aria-label={`Abrir RNC ${r.number}`}>•••</button></td>
+                <td>{r.responseOwner || "Não identificado"}</td><td className="row-actions">{r.status !== "Aprovada" && <button className="respond-button" onClick={(event) => { event.stopPropagation(); window.location.href = `/responder/editor?rnc=${r.id}`; }}>Responder RNC</button>}<button className="dots" aria-label={`Abrir RNC ${r.number}`}>•••</button></td>
               </tr>)}
             </tbody>
           </table>

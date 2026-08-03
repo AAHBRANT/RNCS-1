@@ -15,6 +15,7 @@ export async function GET(request: Request) {
     const workList = activeRows.map((work) => ({
       id: work.id,
       name: work.name,
+      logoUrl: work.logoUrl,
       accessible: canAccessWork(session, work.id),
     }));
 

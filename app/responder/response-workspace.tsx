@@ -133,7 +133,7 @@ export function ResponseWorkspace() {
   useEffect(() => {
     if (!selectedId) return;
     queueMicrotask(() => setBusy(true));
-    window.history.replaceState({}, "", `/responder?rnc=${selectedId}`);
+    window.history.replaceState({}, "", `/responder/editor?rnc=${selectedId}`);
     Promise.all([
       fetch(`/api/rncs/${selectedId}/response`).then(async (response) => ({ response, data: await response.json() })),
       fetch(`/api/rncs/${selectedId}/response/document`).then((response) => response.json()),

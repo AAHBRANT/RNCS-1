@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 
-export function BlockedWorkCard({ name }: { name: string }) {
+export function BlockedWorkCard({ name, logoUrl }: { name: string; logoUrl?: string | null }) {
   const [showWarning, setShowWarning] = useState(false);
 
   return (
@@ -18,6 +19,7 @@ export function BlockedWorkCard({ name }: { name: string }) {
           }
         }}
       >
+        <Image src={logoUrl || "/favicon-rnc.png"} alt="" width={40} height={40} className="work-card-logo" />
         <h3>{name}</h3>
         <p className="status">Sem acesso</p>
         <p className="hint">Clique para mais informações</p>

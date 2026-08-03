@@ -37,7 +37,7 @@ export default async function SelectWorkPage({
     <div className="select-work-page">
       <div className="select-work-container">
         <div className="select-work-header">
-          <Image src="/favicon-rnc.png" alt="RNC" width={48} height={48} />
+          <Image src="/favicon-rnc.png" alt="RNC" width={48} height={48} className="select-work-brand" />
           <h1>Selecione uma obra</h1>
         </div>
 
@@ -57,12 +57,13 @@ export default async function SelectWorkPage({
                   href={`/api/works/${work.id}/select`}
                   className="work-card accessible"
                 >
+                  <Image src={work.logoUrl || "/favicon-rnc.png"} alt="" width={40} height={40} className="work-card-logo" />
                   <h3>{work.name}</h3>
                   <p className="status">Acessível</p>
                 </a>
               );
             } else {
-              return <BlockedWorkCard key={work.id} name={work.name} />;
+              return <BlockedWorkCard key={work.id} name={work.name} logoUrl={work.logoUrl} />;
             }
           })}
         </div>

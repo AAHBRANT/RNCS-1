@@ -251,6 +251,7 @@ async function initializeDatabaseOnce() {
     expires_at TIMESTAMPTZ NOT NULL
   )`;
   await sql`ALTER TABLE access_users ADD COLUMN IF NOT EXISTS allowed_works TEXT NOT NULL DEFAULT '[]'`;
+  await sql`ALTER TABLE works ADD COLUMN IF NOT EXISTS logo_url TEXT`;
   await sql`INSERT INTO access_users (name, email, role, allowed_types, allowed_works, can_view_all, active)
     VALUES
       ('Isabella Marques', 'isabella.marques@aahbrant.com', 'admin', '["*"]', '["*"]', TRUE, TRUE),

@@ -4,6 +4,7 @@ export const works = pgTable("works", {
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
   active: boolean("active").notNull().default(true),
+  logoUrl: text("logo_url"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 });
 
