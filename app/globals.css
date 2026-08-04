@@ -50,9 +50,9 @@ h1 { margin:0; font-family:Georgia, "Times New Roman", serif; font-size:31px; fo
 .pagination button:disabled { opacity:.42; cursor:not-allowed; }
 .table-scroll { overflow:auto; }
 table { width:100%; table-layout:fixed; border-collapse:collapse; font-size:11px; }
-th { padding:12px 10px; background:#f5f7f5; color:#66736c; font-size:9px; text-transform:uppercase; letter-spacing:.5px; text-align:left; border-bottom:1px solid var(--line); white-space:normal; overflow-wrap:break-word; }
+th { padding:12px 6px; background:#f5f7f5; color:#66736c; font-size:9px; text-transform:uppercase; letter-spacing:.5px; text-align:center; border-bottom:1px solid var(--line); white-space:normal; overflow-wrap:break-word; text-wrap:balance; }
 td { padding:14px 10px; border-bottom:1px solid #edf0ee; vertical-align:middle; }
-th:first-child, td:first-child { padding-left:0; }
+td:first-child { padding-left:0; }
 tbody tr { cursor:pointer; transition:.15s; box-shadow:inset 3px 0 transparent; }
 tbody tr:hover { background:#f8faf8; }
 tbody tr.row-overdue { box-shadow:inset 3px 0 #d85e58; background:#fffafa; }
