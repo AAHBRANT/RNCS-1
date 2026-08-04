@@ -83,13 +83,32 @@ export function extractIdentities(subject: string, attachmentNames: string[], bo
   for (const match of `${subject}\n${body}`.matchAll(/(?<![a-zA-Z0-9])RNCs?\s*(?:N[º°o.]?\s*)?[-–—:#]?\s*(\d{1,6})\s*[./-]\s*(20\d{2}|\d{2})(?![a-zA-Z0-9])/gi)) {
     add(match[1], match[2]);
   }
+  // Fallback: comprovado com e-mail real (Pedro, 11 anexos) — alguns nomes de
+  // anexo mencionam "RNC NNN" sem nenhum ano junto (ex.: "FG 13 - TRATATIVA DE
+  // RNC 161.pdf"), então os padrões acima nunca capturam essas identidades.
+  // Só herda o ano de outros anexos da MESMA mensagem quando todos eles
+  // concordam num único ano — nunca adivinha um ano do zero.
+  const confirmedYears = [...new Set([...found.values()].map((identity) => identity.year))];
+  if (confirmedYears.length === 1) {
+    const fallbackYear = String(confirmedYears[0]);
+    for (const name of attachmentNames) {
+      for (const match of name.matchAll(/(?<![a-zA-Z0-9])RNCs?\s*(?:N[º°o.]?\s*)?[-–—_/:]?\s*(\d{1,6})(?![a-zA-Z0-9])/gi)) {
+        add(match[1], fallbackYear);
+      }
+    }
+  }
   return [...found.values()];
 }
 
-function identityIsStrong(identity: Identity, subject: string, attachmentNames: string[]) {
-  const key = `${Number(identity.number)}\\s*[\\/_-]\\s*${identity.year}`;
-  const matcher = new RegExp(key, "i");
-  return matcher.test(subject) || attachmentNames.some((name) => matcher.test(name));
+export function identityIsStrong(identity: Identity, subject: string, attachmentNames: string[]) {
+  const withYear = new RegExp(`${Number(identity.number)}\\s*[\\/_-]\\s*${identity.year}`, "i");
+  // Alguns anexos citam "RNC NNN" sem o ano junto (ex.: "FG 13 - TRATATIVA DE
+  // RNC 161.pdf") — o ano nesse caso já veio de outro anexo da mesma mensagem
+  // (ver extractIdentities), então basta confirmar que o nome cita mesmo essa
+  // RNC pelo número, com a palavra "RNC" ao lado (evita casar um número solto).
+  const withoutYear = new RegExp(`(?<![a-zA-Z0-9])RNCs?\\s*(?:N[º°o.]?\\s*)?[-–—_/:]?\\s*0*${Number(identity.number)}(?![a-zA-Z0-9])`, "i");
+  return withYear.test(subject)
+    || attachmentNames.some((name) => withYear.test(name) || withoutYear.test(name));
 }
 
 function newMessageBody(body: string) {

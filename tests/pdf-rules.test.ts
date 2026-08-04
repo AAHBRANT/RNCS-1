@@ -3,7 +3,7 @@ import test from "node:test";
 import { extractRncInformation } from "../lib/pdf/extract-rnc-information";
 import { processRncAttachment } from "../lib/pdf/process-rnc-attachment";
 import { analysisStatusFromEmailBody } from "../lib/rnc-analysis";
-import { classifyMessageKind, explicitSentIdentities, extractIdentities } from "../lib/outlook-sync";
+import { classifyMessageKind, explicitSentIdentities, extractIdentities, identityIsStrong } from "../lib/outlook-sync";
 import { classifyRncType } from "../lib/pdf/classify-type";
 
 test("identifica número e ano da RNC", () => {
@@ -251,6 +251,28 @@ test("aceita anexo com RNC e padrão número-ano", () => {
     assert.equal(result.length, 1, `Deveria aceitar: ${attachmentName}`);
     assert.equal(result[0].number, expectedNumber, `Número incorreto para: ${attachmentName}`);
   }
+});
+
+test("infere o ano de anexos sem ano quando outro anexo da mesma mensagem confirma o ano", () => {
+  // Caso real: e-mail do Pedro com 11 RNCs, 5 delas em anexos sem ano no nome
+  // ("FG 13 - TRATATIVA DE RNC 161.pdf") — só resolve porque as outras 6 do
+  // mesmo e-mail usam o padrão "TRATATIVA_RNC_164_2026.pdf" (com ano).
+  const attachmentNames = [
+    "FG 13 - TRATATIVA DE RNC 161.pdf", "TRATATIVA_RNC_164_2026.pdf",
+  ];
+  const result = extractIdentities("", attachmentNames, "");
+  const byNumber = new Map(result.map((identity) => [identity.number, identity]));
+  assert.equal(byNumber.get("161")?.year, 2026);
+  assert.equal(byNumber.get("164")?.year, 2026);
+  assert.equal(identityIsStrong({ number: "161", year: 2026 }, "", attachmentNames), true);
+});
+
+test("não infere ano de anexo sem ano quando os demais anexos da mensagem discordam do ano", () => {
+  const attachmentNames = [
+    "FG 13 - TRATATIVA DE RNC 161.pdf", "TRATATIVA_RNC_164_2026.pdf", "TRATATIVA_RNC_170_2025.pdf",
+  ];
+  const result = extractIdentities("", attachmentNames, "");
+  assert.equal(result.some((identity) => identity.number === "161"), false);
 });
 
 test("rejeita anexo com apenas número-ano (sem RNC)", () => {
