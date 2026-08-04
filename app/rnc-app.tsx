@@ -396,12 +396,11 @@ export function RncApp() {
   }
 
   const years = [...new Set(rows.map((r) => r.year))].sort((a, b) => b - a);
-  const activeWork = activeWorkId ? works.find((w) => w.id === activeWorkId) : null;
 
   return (
     <div className="app-shell">
       <Topbar activeUser={accessUser} collapsed={collapsed} onToggleCollapse={toggleCollapsed} works={works} activeWorkId={activeWorkId} onSelectWork={selectWork} />
-      <Sidebar activeWorkName={activeWork?.name || null} canCreateRnc={accessUser?.role === "admin"} outlook={outlook} syncing={syncing} collapsed={collapsed} onToggleCollapse={toggleCollapsed} onSync={syncEmails} onNewRnc={() => setShowForm(true)} onExportExcel={exportExcel} onExportPdf={() => window.print()} canReclassifyTypes={accessUser?.role === "admin"} reclassifying={reclassifying} onReclassifyTypes={reclassifyTypes} />
+      <Sidebar canCreateRnc={accessUser?.role === "admin"} outlook={outlook} syncing={syncing} collapsed={collapsed} onToggleCollapse={toggleCollapsed} onSync={syncEmails} onNewRnc={() => setShowForm(true)} onExportExcel={exportExcel} onExportPdf={() => window.print()} canReclassifyTypes={accessUser?.role === "admin"} reclassifying={reclassifying} onReclassifyTypes={reclassifyTypes} />
       <main className="app-main">
       <section className="page-heading">
         <div><p className="eyebrow">Visão geral</p><h1>Relatórios de Não Conformidade</h1><p>Acompanhe prazos, respostas e retornos da Supervisão.</p></div>
@@ -443,22 +442,22 @@ export function RncApp() {
         <div className="table-scroll">
           <table>
             <colgroup>
-              <col style={{ width: "2%" }} /><col style={{ width: "9%" }} /><col style={{ width: "3%" }} />
-              <col style={{ width: "20%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} />
+              <col style={{ width: "2%" }} /><col style={{ width: "10%" }} /><col style={{ width: "3%" }} />
+              <col style={{ width: "26%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} />
               <col style={{ width: "7%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} />
-              <col style={{ width: "6%" }} /><col style={{ width: "7%" }} /><col style={{ width: "12%" }} />
-              <col style={{ width: "10%" }} />
+              <col style={{ width: "6%" }} /><col style={{ width: "9%" }} />
+              <col style={{ width: "13%" }} />
             </colgroup>
-            <thead><tr><th>Item</th><th>Nº RNC</th><th>Ano</th><th>Descrição</th><th>Tipo</th><th>Recebimento</th><th>Prazo de envio</th><th>Envio</th><th>Retorno</th><th>Data da inspeção</th><th>Status</th><th>Responsável da área inspecionada</th><th /></tr></thead>
+            <thead><tr><th>Item</th><th>Nº RNC</th><th>Ano</th><th>Descrição</th><th>Tipo</th><th>Recebimento</th><th>Prazo de envio</th><th>Envio</th><th>Retorno</th><th>Data da inspeção</th><th>Status</th><th /></tr></thead>
             <tbody>
-              {busy && <tr><td colSpan={13} className="empty">Carregando registros…</td></tr>}
-              {!busy && !filtered.length && <tr><td colSpan={13} className="empty"><strong>Nenhuma RNC encontrada</strong><span>Cadastre a primeira RNC ou ajuste os filtros.</span></td></tr>}
+              {busy && <tr><td colSpan={12} className="empty">Carregando registros…</td></tr>}
+              {!busy && !filtered.length && <tr><td colSpan={12} className="empty"><strong>Nenhuma RNC encontrada</strong><span>Cadastre a primeira RNC ou ajuste os filtros.</span></td></tr>}
               {paginated.map((r, index) => <tr key={r.id} className={`row-${urgency(r)}`} onClick={() => openDetails(r)}>
                 <td className="item">{String((page - 1) * PAGE_SIZE + index + 1).padStart(2, "0")}</td><td><strong className="rnc-number">RNC {r.number}</strong><small className="work-name">{r.workName}</small></td><td>{r.year}</td>
                 <td className="description">{r.description}</td><td><span className="type-tag">{r.type}</span></td><td>{fmt(r.receivedAt)}</td>
                 <td><strong>{fmt(r.dueAt)}</strong><small>{deadlineResult(r).label}</small></td>
                 <td>{fmt(r.sentAt)}</td><td>{fmt(r.returnedAt)}</td><td>{fmt(r.inspectionDate)}</td><td><span className={`status status-${r.status.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replaceAll(" ", "-")}`}>{r.status}</span></td>
-                <td>{r.responseOwner || "Não identificado"}</td><td className="row-actions">{r.status !== "Aprovada" && <button className="respond-button" onClick={(event) => { event.stopPropagation(); window.location.href = `/responder/editor?rnc=${r.id}`; }}>Responder RNC</button>}<button className="dots" aria-label={`Abrir RNC ${r.number}`}>•••</button></td>
+                <td className="row-actions">{r.status !== "Aprovada" && <button className="respond-button" onClick={(event) => { event.stopPropagation(); window.location.href = `/responder/editor?rnc=${r.id}`; }}>Responder RNC</button>}</td>
               </tr>)}
             </tbody>
           </table>

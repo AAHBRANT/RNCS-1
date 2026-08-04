@@ -422,7 +422,6 @@ export function ResponseWorkspace() {
       <div style={{ display: "contents" }} onClickCapture={handleNavClickCapture}>
         <Topbar activeUser={accessUser} collapsed={collapsed} onToggleCollapse={toggleCollapsed} works={works} activeWorkId={activeWorkId} onSelectWork={requestSwitchWork} />
         <Sidebar
-          activeWorkName={null}
           canCreateRnc={false}
           outlook={outlook}
           syncing={false}

@@ -118,7 +118,6 @@ export default function ResponderPage() {
     <div className="app-shell">
       <Topbar activeUser={accessUser} collapsed={collapsed} onToggleCollapse={toggleCollapsed} works={allWorks} activeWorkId={activeWorkId} onSelectWork={selectWork} />
       <Sidebar
-        activeWorkName={null}
         canCreateRnc={accessUser?.role === "admin"}
         outlook={outlook}
         syncing={false}

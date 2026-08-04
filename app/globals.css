@@ -72,7 +72,6 @@ td small { display:block; color:#829089; margin-top:4px; font-size:9px; white-sp
 .status { display:inline-block; border-radius:999px; padding:5px 8px; background:#eef1ef; color:#5d6963; font-size:9px; font-weight:800; white-space:nowrap; }
 .status-recebida{background:#fff0cd;color:#9b6815}.status-em-elaboracao{background:#f0e9ff;color:#7352a5}.status-respondida{background:#e4f0ff;color:#316fab}.status-aprovada{background:#e1f5e8;color:#267147}.status-reprovada{background:#ffe8e6;color:#a5413b}.status-reaberta{background:#efe8fa;color:#74519f}
 .attachment-audit{margin-top:8px;border:1px solid #e4e9e6;border-radius:8px;padding:7px 9px;background:#fafcfb}.attachment-audit summary{cursor:pointer;font-size:10px;font-weight:700;color:#385648}.attachment-audit small{display:block;margin-top:5px}.attachment-audit pre{max-height:220px;overflow:auto;white-space:pre-wrap;font:10px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;background:#f1f5f2;padding:8px;border-radius:6px;color:#33443b}
-.dots { border:0; background:transparent; color:#86918b; }
 .row-actions { display:flex; align-items:center; flex-wrap:wrap; gap:4px; }
 .respond-button { border:1px solid #bcd4c7; color:var(--green); background:#f4faf6; border-radius:7px; padding:6px 8px; font-size:9px; font-weight:800; text-transform:uppercase; white-space:nowrap; }
 .empty { height:220px; text-align:center; color:#839089; }
@@ -251,12 +250,7 @@ body.sidebar-collapsed .app-shell { grid-template-columns:64px 1fr; }
 .sidebar-toggle { display:inline-flex; align-items:center; border:0; background:none; padding:4px; line-height:1; color:#617069; cursor:pointer; flex-shrink:0; }
 .sidebar-toggle:hover { color:var(--green); }
 .sidebar.collapsed .sidebar-nav a, .sidebar.collapsed .sidebar-new-rnc, .sidebar.collapsed .sidebar-nav-toggle, .sidebar.collapsed .sidebar-collapse-toggle, .sidebar.collapsed .sidebar-reclassify { justify-content:center; padding:12px 4px; border-left:0; }
-.sidebar.collapsed .sidebar-work { text-align:center; }
 .sidebar.collapsed .sidebar-sync { display:flex; justify-content:center; padding:12px 0; }
-.sidebar-work { padding:16px; background:#f5f7f5; border:1px solid var(--line); border-radius:10px; margin:12px 16px; }
-.sidebar-work p { margin:0 0 8px; color:var(--muted); font-size:9px; font-weight:800; text-transform:uppercase; }
-.sidebar-work a { display:block; color:var(--ink); text-decoration:none; font-size:13px; font-weight:600; }
-.sidebar-work a:hover { color:var(--green); }
 .sidebar-nav { padding:12px 0; border-bottom:1px solid var(--line); flex:1; }
 .sidebar-nav a, .sidebar-nav > p, .sidebar-new-rnc, .sidebar-nav-toggle { display:flex; align-items:center; gap:10px; width:100%; padding:12px 16px; color:#617069; font-size:12px; text-decoration:none; border:0; border-left:3px solid transparent; background:none; text-align:left; font-family:inherit; transition:.15s; }
 .sidebar-nav a, .sidebar-new-rnc, .sidebar-nav-toggle { cursor:pointer; }
@@ -309,4 +303,4 @@ body.sidebar-collapsed .app-shell { grid-template-columns:64px 1fr; }
 .warning-dialog p.muted { color:var(--muted); }
 .warning-dialog .button { width:100%; margin-top:16px; }
 @media (max-width:750px){.app-shell{grid-template-columns:1fr}.sidebar{position:fixed;left:0;top:0;height:100%;z-index:100;transform:translateX(-100%);transition:.22s}.sidebar.open{transform:translateX(0)}.app-main{grid-template-columns:1fr}.works-grid{grid-template-columns:1fr}}
-@media print{.topbar,.app-topbar,.filters,.export-actions,.header-actions,.dots,.toast,.sidebar,.select-work-page{display:none!important}.page-heading,.metrics{padding-left:0;padding-right:0}.workspace{margin:0;border:0}.table-scroll{overflow:visible}table{min-width:0;font-size:8px}th,td{padding:6px 4px}.drawer,.backdrop,.modal{display:none}}
+@media print{.topbar,.app-topbar,.filters,.export-actions,.header-actions,.toast,.sidebar,.select-work-page{display:none!important}.page-heading,.metrics{padding-left:0;padding-right:0}.workspace{margin:0;border:0}.table-scroll{overflow:visible}table{min-width:0;font-size:8px}th,td{padding:6px 4px}.drawer,.backdrop,.modal{display:none}}

@@ -3,11 +3,10 @@
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
-  Bell, Building2, ClipboardList, Download, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Reply, Tag,
+  Bell, ClipboardList, Download, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Reply, Tag,
 } from "lucide-react";
 
 export type SidebarProps = {
-  activeWorkName: string | null;
   canCreateRnc: boolean;
   outlook: { connected: boolean; configured: boolean };
   syncing: boolean;
@@ -23,7 +22,7 @@ export type SidebarProps = {
 };
 
 export function Sidebar({
-  activeWorkName, canCreateRnc, outlook, syncing, collapsed, onToggleCollapse, onSync, onNewRnc, onExportExcel, onExportPdf,
+  canCreateRnc, outlook, syncing, collapsed, onToggleCollapse, onSync, onNewRnc, onExportExcel, onExportPdf,
   canReclassifyTypes = false, reclassifying = false, onReclassifyTypes,
 }: SidebarProps) {
   const pathname = usePathname();
@@ -33,12 +32,6 @@ export function Sidebar({
 
   return (
     <aside className={`sidebar${collapsed ? " collapsed" : ""}`}>
-      {activeWorkName && (
-        <div className="sidebar-work" title={collapsed ? activeWorkName : undefined}>
-          {!collapsed && <p>Obra ativa</p>}
-          <a href="/selecionar-obra">{collapsed ? <Building2 size={16} /> : activeWorkName}</a>
-        </div>
-      )}
 
       <nav className="sidebar-nav">
         <div className="sidebar-group">
