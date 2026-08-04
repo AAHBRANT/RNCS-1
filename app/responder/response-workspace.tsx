@@ -1,7 +1,7 @@
 "use client";
 
 import { MouseEvent, useEffect, useMemo, useRef, useState } from "react";
-import { TriangleAlert, X } from "lucide-react";
+import { Eye, FileText, History, TriangleAlert, X } from "lucide-react";
 import { Sidebar } from "../components/sidebar";
 import { Topbar } from "../components/topbar";
 import { useSidebarCollapse } from "../../lib/use-sidebar-collapse";
@@ -20,7 +20,7 @@ type EmailEvent = {
 };
 type Attachment = {
   id: string; name: string; extractedText?: string; extractionMethod?: string;
-  pageCount?: number; needsOcr?: boolean;
+  pageCount?: number; needsOcr?: boolean; eventId?: number;
 };
 type Draft = {
   directive: string; analysis: string; actionsTaken: string; technicalResponse: string;
@@ -56,7 +56,7 @@ function attachmentsFromEmails(emails: EmailEvent[]) {
   const attachments = emails.flatMap((email) => {
     try {
       return (JSON.parse(email.attachmentMetadata || "[]") as Attachment[])
-        .map((attachment) => ({ ...attachment, eventSubject: email.subject || email.eventType }));
+        .map((attachment) => ({ ...attachment, eventSubject: email.subject || email.eventType, eventId: email.id }));
     } catch {
       return [];
     }
@@ -80,6 +80,16 @@ export function ResponseWorkspace() {
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [selectedAttachments, setSelectedAttachments] = useState<string[]>([]);
+  const [activePanel, setActivePanel] = useState<"documents" | "versions" | "viewer" | null>(null);
+  const [viewingAttachment, setViewingAttachment] = useState<{ eventId: number; id: string; name: string } | null>(null);
+  function togglePanel(panel: "documents" | "versions" | "viewer") {
+    setActivePanel((current) => (current === panel ? null : panel));
+  }
+  function viewAttachment(attachment: Attachment) {
+    if (!attachment.eventId) return;
+    setViewingAttachment({ eventId: attachment.eventId, id: attachment.id, name: attachment.name });
+    setActivePanel("viewer");
+  }
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [accessUser, setAccessUser] = useState<AccessUser | null>(null);
@@ -453,32 +463,11 @@ export function ResponseWorkspace() {
       </section>
 
       {!rnc && <section className="response-empty">{busy ? "Carregando RNC…" : "Não há RNC disponível para resposta."}</section>}
-      {rnc && <section className="response-workspace">
+      {rnc && <section className={`response-workspace${activePanel ? " panel-open" : ""}`}>
         <aside className="response-dossier">
           <span className={`status status-${rnc.status.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replaceAll(" ", "-")}`}>{rnc.status}</span>
           <h2>RNC {rnc.number}/{rnc.year}</h2>
           <p>{rnc.description}</p>
-          <dl>
-            <div><dt>Obra</dt><dd>{rnc.workName}</dd></div>
-            <div><dt>Tipo</dt><dd>{rnc.type}</dd></div>
-            <div><dt>Recebimento</dt><dd>{formatDate(rnc.receivedAt)}</dd></div>
-            <div><dt>Prazo</dt><dd>{formatDate(rnc.dueAt)}</dd></div>
-            <div><dt>Responsável da área inspecionada</dt><dd>{rnc.responseOwner || "Não identificado"}</dd></div>
-            <div><dt>Responsável fiscal pela inspeção</dt><dd>{rnc.inspectionOwner || "Não identificado"}</dd></div>
-            <div><dt>Contrato</dt><dd>{rnc.contract || "Não identificado"}</dd></div>
-            {rnc.analysisOwner && <div><dt>Resp. pela análise</dt><dd>{rnc.analysisOwner}</dd></div>}
-            <div><dt>Envio anterior</dt><dd>{formatDate(rnc.sentAt)}</dd></div>
-          </dl>
-          <h3>Documentos do dossiê</h3>
-          <div className="evidence-list">
-            {attachments.length ? attachments.map((attachment) => {
-              const key = attachment.id || attachment.name;
-              return <label key={key}>
-                <input type="checkbox" checked={selectedAttachments.includes(key)} onChange={(event) => setSelectedAttachments((current) => event.target.checked ? [...current, key] : current.filter((item) => item !== key))} />
-                <span><strong>{attachment.name}</strong><small>{attachment.needsOcr ? "Leitura indisponível" : attachment.extractionMethod === "PDF_TEXT" ? `${attachment.pageCount || "?"} página(s) · texto extraído` : "Anexo registrado"}</small></span>
-              </label>;
-            }) : <p className="muted">Nenhum documento vinculado.</p>}
-          </div>
         </aside>
 
         <div className="response-editor">
@@ -559,11 +548,47 @@ export function ResponseWorkspace() {
           </div>
         </div>
 
-        <aside className="version-panel">
-          <h3>Histórico de versões</h3>
-          {versions.length ? versions.map((version) => <button key={version.id} onClick={() => restoreVersion(version)}>
-            <strong>Versão {version.version}</strong><small>{new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(version.createdAt))}</small>{version.createdBy && <small>{version.createdBy}</small>}
-          </button>) : <p className="muted">Nenhuma versão salva.</p>}
+        <aside className={`dossier-panel${activePanel ? " open" : ""}`}>
+          <div className="dossier-panel-rail">
+            <button type="button" className={activePanel === "documents" ? "active" : ""} title="Documentos do dossiê" onClick={() => togglePanel("documents")}><FileText size={18} /></button>
+            <button type="button" className={activePanel === "versions" ? "active" : ""} title="Histórico de versões" onClick={() => togglePanel("versions")}><History size={18} /></button>
+            <button type="button" className={activePanel === "viewer" ? "active" : ""} title="Visualizar PDF" onClick={() => togglePanel("viewer")}><Eye size={18} /></button>
+          </div>
+          {activePanel && <div className="dossier-panel-content">
+            {activePanel === "documents" && <>
+              <h3>RNC {rnc.number}/{rnc.year}</h3>
+              <h4>Documentos do dossiê</h4>
+              <div className="evidence-list">
+                {attachments.length ? attachments.map((attachment) => {
+                  const key = attachment.id || attachment.name;
+                  const isPdf = /\.pdf$/i.test(attachment.name);
+                  return <div className="evidence-item" key={key}>
+                    <label>
+                      <input type="checkbox" checked={selectedAttachments.includes(key)} onChange={(event) => setSelectedAttachments((current) => event.target.checked ? [...current, key] : current.filter((item) => item !== key))} />
+                      <span><strong>{attachment.name}</strong><small>{attachment.needsOcr ? "Leitura indisponível" : attachment.extractionMethod === "PDF_TEXT" ? `${attachment.pageCount || "?"} página(s) · texto extraído` : "Anexo registrado"}</small></span>
+                    </label>
+                    {isPdf && attachment.eventId && <button type="button" className="button secondary" onClick={() => viewAttachment(attachment)}>Visualizar</button>}
+                  </div>;
+                }) : <p className="muted">Nenhum documento vinculado.</p>}
+              </div>
+            </>}
+            {activePanel === "versions" && <>
+              <h3>Histórico de versões</h3>
+              {versions.length ? versions.map((version) => <button key={version.id} onClick={() => restoreVersion(version)}>
+                <strong>Versão {version.version}</strong><small>{new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(version.createdAt))}</small>{version.createdBy && <small>{version.createdBy}</small>}
+              </button>) : <p className="muted">Nenhuma versão salva.</p>}
+            </>}
+            {activePanel === "viewer" && <>
+              <h3>Visualizar PDF</h3>
+              {viewingAttachment
+                ? <iframe
+                    className="dossier-pdf-frame"
+                    title={viewingAttachment.name}
+                    src={`/api/rncs/${rnc.id}/dossier-attachment?eventId=${viewingAttachment.eventId}&attachmentId=${encodeURIComponent(viewingAttachment.id)}`}
+                  />
+                : <p className="muted">Selecione um documento na aba Documentos para visualizar.</p>}
+            </>}
+          </div>}
         </aside>
       </section>}
       {notice && <button className="toast" onClick={() => setNotice("")}>{notice}<span><X size={14} /></span></button>}

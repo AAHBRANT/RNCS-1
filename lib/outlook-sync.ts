@@ -191,7 +191,7 @@ export function addBusinessDays(value: string, days = 5) {
 const GRAPH_MAX_ATTEMPTS = 4;
 const GRAPH_TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504]);
 
-async function graph<T>(accessToken: string, url: string, attempt = 1): Promise<T> {
+export async function graph<T>(accessToken: string, url: string, attempt = 1): Promise<T> {
   const fullUrl = url.startsWith("http") ? url : `https://graph.microsoft.com/v1.0${url}`;
   let response: Response;
   try {
