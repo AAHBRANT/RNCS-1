@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
+import { ChevronDown, Menu } from "lucide-react";
 
 export type TopbarWork = { id: number; name: string; accessible: boolean };
 
@@ -41,7 +42,7 @@ export function Topbar({ activeUser, collapsed, onToggleCollapse, works, activeW
           aria-expanded={!collapsed}
           title={collapsed ? "Expandir menu" : "Recolher menu"}
         >
-          ☰
+          <Menu size={18} />
         </button>
         <span className="app-topbar-title">Controle de RNC</span>
         {activeWork && accessibleWorks.length > 0 && (
@@ -53,7 +54,7 @@ export function Topbar({ activeUser, collapsed, onToggleCollapse, works, activeW
               aria-expanded={workMenuOpen}
               title={activeWork.name}
             >
-              Obra: <strong>{activeWork.name}</strong> ▼
+              Obra: <strong>{activeWork.name}</strong> <ChevronDown size={14} />
             </button>
             {workMenuOpen && (
               <div className="app-topbar-work-menu">

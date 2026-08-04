@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, Search, Star, X } from "lucide-react";
 import { Sidebar } from "./components/sidebar";
 import { Topbar } from "./components/topbar";
 import { deadlineResult, fmt, hasAnsweredStatus, hasBeenAnswered } from "../lib/rnc-deadline";
@@ -432,7 +433,7 @@ export function RncApp() {
 
       <section className="workspace">
         <div className="filters">
-          <label className="search"><span>⌕</span><input aria-label="Pesquisar RNC" value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }} placeholder="Pesquisar número, descrição ou texto…" /></label>
+          <label className="search"><span><Search size={16} /></span><input aria-label="Pesquisar RNC" value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }} placeholder="Pesquisar número, descrição ou texto…" /></label>
           <select aria-label="Filtrar por status" value={status} onChange={(e) => { setStatus(e.target.value); setCurrentPage(1); }}><option value="all">Todos os status</option>{statusOptions.map((s) => <option key={s}>{s}</option>)}</select>
           <select aria-label="Filtrar por tipo" value={type} onChange={(e) => { setType(e.target.value); setCurrentPage(1); }}><option value="all">Todos os tipos</option>{typeOptions.map((t) => <option key={t}>{t}</option>)}</select>
           <select aria-label="Filtrar por ano" value={year} onChange={(e) => { setYear(e.target.value); setCurrentPage(1); }}><option value="all">Todos os anos</option>{years.map((y) => <option key={y}>{y}</option>)}</select>
@@ -463,13 +464,13 @@ export function RncApp() {
           </table>
         </div>
         {filtered.length > PAGE_SIZE && <nav className="pagination" aria-label="Paginação das RNCs">
-          <button type="button" disabled={page === 1} onClick={() => setCurrentPage(page - 1)}>← Anterior</button>
+          <button type="button" disabled={page === 1} onClick={() => setCurrentPage(page - 1)}><ChevronLeft size={14} /> Anterior</button>
           <span>Página <strong>{page}</strong> de {totalPages}</span>
-          <button type="button" disabled={page === totalPages} onClick={() => setCurrentPage(page + 1)}>Próxima →</button>
+          <button type="button" disabled={page === totalPages} onClick={() => setCurrentPage(page + 1)}>Próxima <ChevronRight size={14} /></button>
         </nav>}
       </section>
 
-      {notice && <button className="toast" onClick={() => setNotice("")}>{notice}<span>×</span></button>}
+      {notice && <button className="toast" onClick={() => setNotice("")}>{notice}<span><X size={14} /></span></button>}
       {reclassifyReport && <Modal title="Relatório de reclassificação de tipos" onClose={() => setReclassifyReport(null)}>
         <div className="reclassify-report">
           <p><strong>{reclassifyReport.analyzed}</strong> RNC(s) analisada(s)</p>
@@ -521,14 +522,14 @@ export function RncApp() {
       {showForm && <Modal title="Cadastrar nova RNC" onClose={() => setShowForm(false)}><RncForm works={works} typeOptions={typeOptions} activeWorkId={activeWorkId} onSubmit={createRnc} /></Modal>}
       {editing && <Modal title={`Editar RNC ${editing.number}`} onClose={() => setEditing(null)}><RncForm works={works} typeOptions={typeOptions} rnc={editing} activeWorkId={activeWorkId} onSubmit={saveRnc} /></Modal>}
       {selected && <aside className="drawer">
-        <div className="drawer-head"><div><span className="eyebrow">{selected.workName}</span><h2>RNC {selected.number}/{selected.year}</h2></div><button onClick={() => setSelected(null)}>×</button></div>
+        <div className="drawer-head"><div><span className="eyebrow">{selected.workName}</span><h2>RNC {selected.number}/{selected.year}</h2></div><button onClick={() => setSelected(null)}><X size={18} /></button></div>
         <div className="drawer-body">
           <span className={`status status-${selected.status.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replaceAll(" ", "-")}`}>{selected.status}</span>
           <h3>{selected.description}</h3>
           <dl><div><dt>Tipo</dt><dd>{selected.type}</dd><small>{sourceFor(selected, "type")}</small></div><div><dt>Recebimento</dt><dd>{fmt(selected.receivedAt)}</dd><small>{sourceFor(selected, "receivedAt")}</small></div><div><dt>Prazo</dt><dd>{fmt(selected.dueAt)}</dd></div><div><dt>Envio</dt><dd>{fmt(selected.sentAt)}</dd><small>{sourceFor(selected, "sentAt")}</small></div><div><dt>Retorno</dt><dd>{fmt(selected.returnedAt)}</dd><small>{sourceFor(selected, "returnedAt")}</small></div><div><dt>Data da inspeção</dt><dd>{fmt(selected.inspectionDate)}</dd><small>{sourceFor(selected, "inspectionDate")}</small></div><div><dt>Status</dt><dd>{selected.status}</dd><small>{sourceFor(selected, "status")}</small></div><div><dt>Responsável da área inspecionada</dt><dd>{selected.responseOwner || "Não identificado"}</dd><small>{sourceFor(selected, "responseOwner")}</small></div><div><dt>Responsável fiscal pela inspeção</dt><dd>{selected.inspectionOwner || "Não identificado"}</dd><small>{sourceFor(selected, "inspectionOwner")}</small></div><div><dt>Contrato</dt><dd>{selected.contract || "Não identificado"}</dd><small>{sourceFor(selected, "contract")}</small></div><div><dt>Data de emissão da tratativa</dt><dd>{fmt(selected.issuedAt)}</dd><small>{sourceFor(selected, "issuedAt")}</small></div><div><dt>Local/frente de serviço</dt><dd>{selected.serviceLocation || "Não identificado"}</dd><small>{sourceFor(selected, "serviceLocation")}</small></div>{selected.analysisOwner && <div><dt>Resp. pela análise</dt><dd>{selected.analysisOwner}</dd></div>}</dl>
           {conflicts.some((item) => item.status === "open") && <section className="conflict"><strong>Informações divergentes encontradas</strong><p>Revise os dados candidatos e selecione manualmente o valor correto.</p>{conflicts.filter((item) => item.status === "open").map((item) => <small key={item.id}>{item.field}: {JSON.parse(item.candidateValues).join(" · ")}</small>)}</section>}
           <section className="notes"><h4>Observações internas</h4><p>{selected.notes || "Nenhuma observação registrada."}</p></section>
-          <section className="timeline"><h4>Dossiê e histórico oficial de e-mails</h4>{emails.length ? emails.map((event) => <div className="timeline-item" key={`email-${event.id}`}><i /><div><strong>{event.eventType.replaceAll("_", " ")}</strong><p>{event.subject}</p><small>{fmt(event.occurredAt)} · {event.folderName || "Outlook"}</small><small>Vínculo {"★".repeat(event.associationConfidence || 0)}{"☆".repeat(5 - (event.associationConfidence || 0))}{event.conversationId ? " · Conversation ID confirmado" : ""}</small>
+          <section className="timeline"><h4>Dossiê e histórico oficial de e-mails</h4>{emails.length ? emails.map((event) => <div className="timeline-item" key={`email-${event.id}`}><i /><div><strong>{event.eventType.replaceAll("_", " ")}</strong><p>{event.subject}</p><small>{fmt(event.occurredAt)} · {event.folderName || "Outlook"}</small><small className="confidence-stars">Vínculo {Array.from({ length: 5 }).map((_, i) => <Star key={i} size={12} fill={i < (event.associationConfidence || 0) ? "currentColor" : "none"} />)}{event.conversationId ? " · Conversation ID confirmado" : ""}</small>
             {attachmentsFromEvent(event).map((attachment) => <details className="attachment-audit" key={attachment.id}>
               <summary>{attachment.name} · {attachment.needsOcr ? "OCR necessário" : attachment.extractionMethod === "PDF_TEXT" ? `${attachment.pageCount || "?"} pág. · texto extraído` : "anexo registrado"}</summary>
               {attachment.processingError && <small>{attachment.processingError}</small>}
@@ -562,7 +563,7 @@ function sourceFor(rnc: Rnc, field: string) {
 }
 
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
-  return <div className="modal"><div className="modal-head"><h2>{title}</h2><button onClick={onClose}>×</button></div>{children}</div>;
+  return <div className="modal"><div className="modal-head"><h2>{title}</h2><button onClick={onClose}><X size={18} /></button></div>{children}</div>;
 }
 
 function RncForm({ works, typeOptions, rnc, activeWorkId, onSubmit }: { works: Work[]; typeOptions: string[]; rnc?: Rnc; activeWorkId: number | null; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { TriangleAlert, X } from "lucide-react";
 import { Sidebar } from "../components/sidebar";
 import { Topbar } from "../components/topbar";
 import { useSidebarCollapse } from "../../lib/use-sidebar-collapse";
@@ -484,7 +485,7 @@ export function ResponseWorkspace() {
         <div className="response-editor">
           {hasUnsavedChanges && (
             <div className="unsaved-warning">
-              <span>⚠️ Há alterações não salvas. Clique em "Salvar nova versão" para registrar.</span>
+              <span><TriangleAlert size={14} /> Há alterações não salvas. Clique em "Salvar nova versão" para registrar.</span>
             </div>
           )}
           <div className="editor-toolbar">
@@ -566,7 +567,7 @@ export function ResponseWorkspace() {
           </button>) : <p className="muted">Nenhuma versão salva.</p>}
         </aside>
       </section>}
-      {notice && <button className="toast" onClick={() => setNotice("")}>{notice}<span>×</span></button>}
+      {notice && <button className="toast" onClick={() => setNotice("")}>{notice}<span><X size={14} /></span></button>}
       {showConfirmDiscard && (
         <div className="modal-backdrop" onClick={() => {
           setShowConfirmDiscard(false);

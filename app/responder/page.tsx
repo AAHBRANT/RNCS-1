@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Search, X } from "lucide-react";
 import { Sidebar } from "../components/sidebar";
 import { Topbar } from "../components/topbar";
 import { deadlineResult, fmt } from "../../lib/rnc-deadline";
@@ -139,7 +140,7 @@ export default function ResponderPage() {
 
         <section className="workspace">
           <div className="filters">
-            <label className="search"><span>⌕</span><input aria-label="Pesquisar RNC" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Pesquisar número, descrição ou responsável…" /></label>
+            <label className="search"><span><Search size={16} /></span><input aria-label="Pesquisar RNC" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Pesquisar número, descrição ou responsável…" /></label>
             {works.length > 1 && (
               <select aria-label="Filtrar por obra" value={workId} onChange={(e) => setWorkId(e.target.value)}>
                 <option value={ALL}>Todas as obras</option>
@@ -195,7 +196,7 @@ export default function ResponderPage() {
           </div>
         </section>
 
-        {notice && <button className="toast" onClick={() => setNotice("")}>{notice}<span>×</span></button>}
+        {notice && <button className="toast" onClick={() => setNotice("")}>{notice}<span><X size={14} /></span></button>}
       </main>
     </div>
   );
