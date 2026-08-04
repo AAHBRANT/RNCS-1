@@ -86,10 +86,52 @@ export function ResponseWorkspace() {
   const [initialPhotosSnapshot, setInitialPhotosSnapshot] = useState<Array<File | null>>([null, null, null, null]);
   const [initialSelectedAttachmentsSnapshot, setInitialSelectedAttachmentsSnapshot] = useState<string[]>([]);
   const [showConfirmDiscard, setShowConfirmDiscard] = useState(false);
-  const [pendingNavigation, setPendingNavigation] = useState<"rnc" | "panel" | "href" | null>(null);
+  const [pendingNavigation, setPendingNavigation] = useState<"rnc" | "panel" | "href" | "work" | null>(null);
   const [pendingRncId, setPendingRncId] = useState("");
   const [pendingHref, setPendingHref] = useState("");
+  const [pendingWorkId, setPendingWorkId] = useState<number | null>(null);
+  const [works, setWorks] = useState<Array<{ id: number; name: string; accessible: boolean }>>([]);
+  const [activeWorkId, setActiveWorkId] = useState<number | null>(null);
   const documentInput = useRef<HTMLInputElement>(null);
+
+  async function loadRncs() {
+    try {
+      const response = await fetch("/api/rncs");
+      const data = await response.json();
+      const available = (data.rncs || []).filter((item: RncListItem) => item.status !== "Aprovada");
+      setRncs(available);
+      if (data.works) setWorks(data.works);
+      if ("activeWorkId" in data) setActiveWorkId(data.activeWorkId ?? null);
+      const requested = new URLSearchParams(window.location.search).get("rnc");
+      const initial = available.some((item: RncListItem) => String(item.id) === requested)
+        ? requested
+        : available[0] ? String(available[0].id) : "";
+      setSelectedId(initial || "");
+    } catch {
+      setNotice("Não foi possível carregar as RNCs.");
+    }
+  }
+
+  async function switchWork(id: number) {
+    const response = await fetch(`/api/works/${id}/select`, { method: "POST" });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      setNotice(data.error || "Não foi possível trocar de obra.");
+      return;
+    }
+    await loadRncs();
+  }
+
+  function requestSwitchWork(id: number) {
+    if (id === activeWorkId) return;
+    if (hasUnsavedChanges) {
+      setPendingNavigation("work");
+      setPendingWorkId(id);
+      setShowConfirmDiscard(true);
+    } else {
+      switchWork(id);
+    }
+  }
 
   useEffect(() => {
     if (!previewDocument) return;
@@ -104,18 +146,7 @@ export function ResponseWorkspace() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/rncs")
-      .then((response) => response.json())
-      .then((data) => {
-        const available = (data.rncs || []).filter((item: RncListItem) => item.status !== "Aprovada");
-        setRncs(available);
-        const requested = new URLSearchParams(window.location.search).get("rnc");
-        const initial = available.some((item: RncListItem) => String(item.id) === requested)
-          ? requested
-          : available[0] ? String(available[0].id) : "";
-        setSelectedId(initial || "");
-      })
-      .catch(() => setNotice("Não foi possível carregar as RNCs."));
+    loadRncs();
   }, []);
 
   useEffect(() => {
@@ -254,11 +285,14 @@ export function ResponseWorkspace() {
       window.location.href = "/";
     } else if (pendingNavigation === "href" && pendingHref) {
       window.location.href = pendingHref;
+    } else if (pendingNavigation === "work" && pendingWorkId) {
+      switchWork(pendingWorkId);
     }
     setShowConfirmDiscard(false);
     setPendingNavigation(null);
     setPendingRncId("");
     setPendingHref("");
+    setPendingWorkId(null);
   }
 
   function handleNavClickCapture(event: MouseEvent<HTMLDivElement>) {
@@ -385,7 +419,7 @@ export function ResponseWorkspace() {
   return (
     <div className="app-shell">
       <div style={{ display: "contents" }} onClickCapture={handleNavClickCapture}>
-        <Topbar activeUser={accessUser} collapsed={collapsed} onToggleCollapse={toggleCollapsed} />
+        <Topbar activeUser={accessUser} collapsed={collapsed} onToggleCollapse={toggleCollapsed} works={works} activeWorkId={activeWorkId} onSelectWork={requestSwitchWork} />
         <Sidebar
           activeWorkName={null}
           canCreateRnc={false}
@@ -539,6 +573,7 @@ export function ResponseWorkspace() {
           setPendingNavigation(null);
           setPendingRncId("");
           setPendingHref("");
+          setPendingWorkId(null);
         }}>
           <div className="modal-dialog" onClick={(event) => event.stopPropagation()}>
             <h2>Descartar alterações?</h2>
@@ -549,6 +584,7 @@ export function ResponseWorkspace() {
                 setPendingNavigation(null);
                 setPendingRncId("");
                 setPendingHref("");
+                setPendingWorkId(null);
               }}>Cancelar</button>
               <button className="button primary" onClick={handleConfirmDiscard}>Descartar</button>
             </div>

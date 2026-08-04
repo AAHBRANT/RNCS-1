@@ -20,6 +20,8 @@ export default function ResponderPage() {
   const [rncs, setRncs] = useState<OverviewRnc[]>([]);
   const [accessUser, setAccessUser] = useState<AccessUser | null>(null);
   const [outlook, setOutlook] = useState({ configured: false, connected: false });
+  const [allWorks, setAllWorks] = useState<Array<{ id: number; name: string; accessible: boolean }>>([]);
+  const [activeWorkId, setActiveWorkId] = useState<number | null>(null);
   const [busy, setBusy] = useState(true);
   const [notice, setNotice] = useState("");
   const [tab, setTab] = useState<"andamento" | "pendentes">("andamento");
@@ -29,6 +31,29 @@ export default function ResponderPage() {
   const [workId, setWorkId] = useState(ALL);
   const [responsavel, setResponsavel] = useState(ALL);
   const [prazo, setPrazo] = useState(ALL);
+
+  async function loadRncs() {
+    setBusy(true);
+    const response = await fetch("/api/rncs/response-overview");
+    const data = await response.json();
+    if (!response.ok) setNotice(data.error || "Não foi possível carregar os dados.");
+    else {
+      setRncs(data.rncs);
+      setAccessUser(data.user || null);
+    }
+    setBusy(false);
+  }
+
+  async function selectWork(id: number) {
+    const response = await fetch(`/api/works/${id}/select`, { method: "POST" });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      setNotice(data.error || "Não foi possível trocar de obra.");
+      return;
+    }
+    setActiveWorkId(id);
+    await loadRncs();
+  }
 
   useEffect(() => {
     let active = true;
@@ -48,6 +73,16 @@ export default function ResponderPage() {
     fetch("/api/outlook/status")
       .then((response) => response.json())
       .then((data) => { if (!data.error) setOutlook(data); })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/works")
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.works) setAllWorks(data.works);
+        if ("activeWorkId" in data) setActiveWorkId(data.activeWorkId ?? null);
+      })
       .catch(() => undefined);
   }, []);
 
@@ -80,7 +115,7 @@ export default function ResponderPage() {
 
   return (
     <div className="app-shell">
-      <Topbar activeUser={accessUser} collapsed={collapsed} onToggleCollapse={toggleCollapsed} />
+      <Topbar activeUser={accessUser} collapsed={collapsed} onToggleCollapse={toggleCollapsed} works={allWorks} activeWorkId={activeWorkId} onSelectWork={selectWork} />
       <Sidebar
         activeWorkName={null}
         canCreateRnc={accessUser?.role === "admin"}

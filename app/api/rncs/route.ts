@@ -61,7 +61,7 @@ export async function GET(request: Request) {
       }).from(rncs).innerJoin(works, eq(rncs.workId, works.id)).orderBy(desc(rncs.year), desc(rncs.id)),
     ]);
     return Response.json({
-      works: workRows,
+      works: workRows.map((work) => ({ ...work, accessible: canAccessWork(session, work.id) })),
       rncs: rncRows.filter(
         (rnc) => canAccessType(session, rnc.type) && (session.activeWorkId === null || rnc.workId === session.activeWorkId) && canAccessWork(session, rnc.workId),
       ),

@@ -14,10 +14,14 @@ export type SidebarProps = {
   onNewRnc: () => void;
   onExportExcel: () => void;
   onExportPdf: () => void;
+  canReclassifyTypes?: boolean;
+  reclassifying?: boolean;
+  onReclassifyTypes?: () => void;
 };
 
 export function Sidebar({
   activeWorkName, canCreateRnc, outlook, syncing, collapsed, onToggleCollapse, onSync, onNewRnc, onExportExcel, onExportPdf,
+  canReclassifyTypes = false, reclassifying = false, onReclassifyTypes,
 }: SidebarProps) {
   const pathname = usePathname();
   const [exportOpen, setExportOpen] = useState(false);
@@ -68,6 +72,19 @@ export function Sidebar({
           )}
         </div>
       </nav>
+
+      {canReclassifyTypes && (
+        <div className="sidebar-actions">
+          <button
+            className="sidebar-reclassify"
+            onClick={onReclassifyTypes}
+            disabled={reclassifying}
+            title={reclassifying ? "Reclassificando…" : "Reclassificar tipos"}
+          >
+            <span className="icon">🏷</span>{!collapsed && <span className="label">{reclassifying ? "Reclassificando…" : "Reclassificar tipos"}</span>}
+          </button>
+        </div>
+      )}
 
       <div className="sidebar-sync">
         {collapsed ? (
