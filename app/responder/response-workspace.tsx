@@ -463,13 +463,7 @@ export function ResponseWorkspace() {
       </section>
 
       {!rnc && <section className="response-empty">{busy ? "Carregando RNC…" : "Não há RNC disponível para resposta."}</section>}
-      {rnc && <section className={`response-workspace${activePanel ? " panel-open" : ""}`}>
-        <aside className="response-dossier">
-          <span className={`status status-${rnc.status.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replaceAll(" ", "-")}`}>{rnc.status}</span>
-          <h2>RNC {rnc.number}/{rnc.year}</h2>
-          <p>{rnc.description}</p>
-        </aside>
-
+      {rnc && <section className={`response-workspace${activePanel ? " panel-open" : ""}${activePanel === "viewer" ? " viewer-active" : ""}`}>
         <div className="response-editor">
           {hasUnsavedChanges && (
             <div className="unsaved-warning">
@@ -557,6 +551,7 @@ export function ResponseWorkspace() {
           {activePanel && <div className="dossier-panel-content">
             {activePanel === "documents" && <>
               <h3>RNC {rnc.number}/{rnc.year}</h3>
+              <p className="dossier-panel-description">{rnc.description}</p>
               <h4>Documentos do dossiê</h4>
               <div className="evidence-list">
                 {attachments.length ? attachments.map((attachment) => {
