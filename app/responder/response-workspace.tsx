@@ -1,9 +1,10 @@
 "use client";
 
-import Image from "next/image";
-import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { normalizeDocxForPreview } from "../../lib/docx-preview-normalizer";
+import { Sidebar } from "../components/sidebar";
+import { Topbar } from "../components/topbar";
+import { useSidebarCollapse } from "../../lib/use-sidebar-collapse";
 
 type RncListItem = {
   id: number; number: string; year: number; description: string; status: string;
@@ -86,6 +87,8 @@ function fitPreviewTables(container: HTMLDivElement) {
 }
 
 export function ResponseWorkspace() {
+  const [collapsed, toggleCollapsed] = useSidebarCollapse();
+  const [outlook, setOutlook] = useState({ configured: false, connected: false });
   const [rncs, setRncs] = useState<RncListItem[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [rnc, setRnc] = useState<RncDetail | null>(null);
@@ -105,8 +108,9 @@ export function ResponseWorkspace() {
   const [initialPhotosSnapshot, setInitialPhotosSnapshot] = useState<Array<File | null>>([null, null, null, null]);
   const [initialSelectedAttachmentsSnapshot, setInitialSelectedAttachmentsSnapshot] = useState<string[]>([]);
   const [showConfirmDiscard, setShowConfirmDiscard] = useState(false);
-  const [pendingNavigation, setPendingNavigation] = useState<"rnc" | "panel" | null>(null);
+  const [pendingNavigation, setPendingNavigation] = useState<"rnc" | "panel" | "href" | null>(null);
   const [pendingRncId, setPendingRncId] = useState("");
+  const [pendingHref, setPendingHref] = useState("");
   const documentInput = useRef<HTMLInputElement>(null);
   const previewContainer = useRef<HTMLDivElement>(null);
 
@@ -114,6 +118,13 @@ export function ResponseWorkspace() {
     if (!previewDocument) return;
     setPreviewZoom(window.innerWidth >= 900 ? 100 : window.innerWidth >= 650 ? 80 : 60);
   }, [previewDocument]);
+
+  useEffect(() => {
+    fetch("/api/outlook/status")
+      .then((response) => response.json())
+      .then((data) => { if (!data.error) setOutlook(data); })
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     fetch("/api/rncs")
@@ -280,10 +291,23 @@ export function ResponseWorkspace() {
       setSelectedId(pendingRncId);
     } else if (pendingNavigation === "panel") {
       window.location.href = "/";
+    } else if (pendingNavigation === "href" && pendingHref) {
+      window.location.href = pendingHref;
     }
     setShowConfirmDiscard(false);
     setPendingNavigation(null);
     setPendingRncId("");
+    setPendingHref("");
+  }
+
+  function handleNavClickCapture(event: MouseEvent<HTMLDivElement>) {
+    if (!hasUnsavedChanges) return;
+    const anchor = (event.target as HTMLElement).closest("a[href]") as HTMLAnchorElement | null;
+    if (!anchor) return;
+    event.preventDefault();
+    setPendingNavigation("href");
+    setPendingHref(anchor.getAttribute("href") || "/");
+    setShowConfirmDiscard(true);
   }
 
   async function saveDraft() {
@@ -398,21 +422,23 @@ export function ResponseWorkspace() {
   }
 
   return (
-    <main>
-      <header className="topbar">
-        <Link className="brand brand-link" href="/">
-          <Image className="brand-mark" src="/favicon-rnc.png" alt="RNC" width={39} height={39} priority />
-          <div><strong>Controle de RNC</strong><small>Área de elaboração de respostas</small></div>
-        </Link>
-        <div className="header-actions">{accessUser && <span className="user-chip"><strong>{accessUser.name}</strong><small>{accessUser.role === "drafter" ? "Elaborador" : accessUser.role === "admin" ? "Administradora" : "Revisor/Aprovador"}</small></span>}<button className="button secondary link-button" onClick={() => {
-          if (hasUnsavedChanges) {
-            setPendingNavigation("panel");
-            setShowConfirmDiscard(true);
-          } else {
-            window.location.href = "/";
-          }
-        }}>← Voltar ao painel</button><a className="logout-link" href="/api/auth/logout">Sair</a></div>
-      </header>
+    <div className="app-shell">
+      <div style={{ display: "contents" }} onClickCapture={handleNavClickCapture}>
+        <Topbar activeUser={accessUser} collapsed={collapsed} onToggleCollapse={toggleCollapsed} />
+        <Sidebar
+          activeWorkName={null}
+          canCreateRnc={false}
+          outlook={outlook}
+          syncing={false}
+          collapsed={collapsed}
+          onToggleCollapse={toggleCollapsed}
+          onSync={() => { window.location.href = "/"; }}
+          onNewRnc={() => { window.location.href = "/"; }}
+          onExportExcel={() => { window.location.href = "/"; }}
+          onExportPdf={() => { window.location.href = "/"; }}
+        />
+      </div>
+      <main className="app-main">
 
       <section className="response-page-heading">
         <div><p className="eyebrow">Elaboração assistida</p><h1>Responder RNC</h1><p>Organize a tratativa, utilize seu agente e mantenha as versões na mesma página.</p></div>
@@ -551,6 +577,7 @@ export function ResponseWorkspace() {
           setShowConfirmDiscard(false);
           setPendingNavigation(null);
           setPendingRncId("");
+          setPendingHref("");
         }}>
           <div className="modal-dialog" onClick={(event) => event.stopPropagation()}>
             <h2>Descartar alterações?</h2>
@@ -560,6 +587,7 @@ export function ResponseWorkspace() {
                 setShowConfirmDiscard(false);
                 setPendingNavigation(null);
                 setPendingRncId("");
+                setPendingHref("");
               }}>Cancelar</button>
               <button className="button primary" onClick={handleConfirmDiscard}>Descartar</button>
             </div>
@@ -586,7 +614,8 @@ export function ResponseWorkspace() {
           <footer>A visualização pode apresentar pequenas diferenças em relação ao Microsoft Word. O arquivo original não é alterado.</footer>
         </section>
       </div>}
-    </main>
+      </main>
+    </div>
   );
 }
 

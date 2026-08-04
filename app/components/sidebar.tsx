@@ -1,57 +1,31 @@
 "use client";
 
-import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 export type SidebarProps = {
-  activeUser: { name: string; email: string; role: "admin" | "drafter" | "reviewer_approver" } | null;
   activeWorkName: string | null;
   canCreateRnc: boolean;
   outlook: { connected: boolean; configured: boolean };
   syncing: boolean;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
   onSync: () => void;
   onNewRnc: () => void;
   onExportExcel: () => void;
   onExportPdf: () => void;
 };
 
-const COLLAPSE_STORAGE_KEY = "sidebar-collapsed";
-
 export function Sidebar({
-  activeUser, activeWorkName, canCreateRnc, outlook, syncing, onSync, onNewRnc, onExportExcel, onExportPdf,
+  activeWorkName, canCreateRnc, outlook, syncing, collapsed, onToggleCollapse, onSync, onNewRnc, onExportExcel, onExportPdf,
 }: SidebarProps) {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
 
   const isActive = (href: string) => pathname === href || pathname?.startsWith(href + "/");
 
-  useEffect(() => {
-    setCollapsed(localStorage.getItem(COLLAPSE_STORAGE_KEY) === "true");
-  }, []);
-
-  useEffect(() => {
-    document.body.classList.toggle("sidebar-collapsed", collapsed);
-    return () => document.body.classList.remove("sidebar-collapsed");
-  }, [collapsed]);
-
-  function toggleCollapsed() {
-    setCollapsed((current) => {
-      const next = !current;
-      localStorage.setItem(COLLAPSE_STORAGE_KEY, String(next));
-      return next;
-    });
-  }
-
   return (
     <aside className={`sidebar${collapsed ? " collapsed" : ""}`}>
-      <div className="sidebar-header">
-        <button className="sidebar-toggle" onClick={toggleCollapsed} aria-expanded={!collapsed} title={collapsed ? "Expandir menu" : "Recolher menu"}>☰</button>
-        {!collapsed && <span className="sidebar-title">Controle de RNC</span>}
-        <Image src="/favicon-rnc.png" alt="RNC" width={36} height={36} className="sidebar-brand" />
-      </div>
-
       {activeWorkName && (
         <div className="sidebar-work" title={collapsed ? activeWorkName : undefined}>
           {!collapsed && <p>Obra ativa</p>}
@@ -62,18 +36,18 @@ export function Sidebar({
       <nav className="sidebar-nav">
         <div className="sidebar-group">
           {!collapsed && <p className="sidebar-group-label">RNC&apos;s</p>}
+          <a href="/" className={isActive("/") && !isActive("/responder") ? "active" : ""} title="Lista de RNCs">
+            <span className="icon">📋</span>{!collapsed && <span className="label">Lista</span>}
+          </a>
           {canCreateRnc && (
             <button className="sidebar-new-rnc" onClick={onNewRnc} title="Nova RNC">
               <span className="icon">＋</span>{!collapsed && <span className="label">Nova RNC</span>}
             </button>
           )}
-          <a href="/" className={isActive("/") && !isActive("/responder") ? "active" : ""} title="Lista de RNCs">
-            <span className="icon">📋</span>{!collapsed && <span className="label">Lista de RNCs</span>}
+          <a href="/responder" className={isActive("/responder") ? "active" : ""} title="Responder">
+            <span className="icon">✎</span>{!collapsed && <span className="label">Responder</span>}
           </a>
         </div>
-        <a href="/responder" className={isActive("/responder") ? "active" : ""} title="Responder">
-          <span className="icon">✎</span>{!collapsed && <span className="label">Responder</span>}
-        </a>
         <p title="Notificações">
           <span className="icon">🔔</span>{!collapsed && <span className="label">Notificações</span>}
         </p>
@@ -111,17 +85,14 @@ export function Sidebar({
       </div>
 
       <div className="sidebar-footer">
-        {activeUser && (
-          <>
-            <div className="sidebar-user" title={collapsed ? activeUser.name : undefined}>
-              {collapsed ? activeUser.name.charAt(0) : activeUser.name}
-              {!collapsed && <small>{activeUser.email}</small>}
-            </div>
-            <a href="/api/auth/logout" className="sidebar-logout" title="Sair">
-              {collapsed ? "⎋" : "Sair"}
-            </a>
-          </>
-        )}
+        <button
+          className="sidebar-collapse-toggle"
+          onClick={onToggleCollapse}
+          aria-expanded={!collapsed}
+          title={collapsed ? "Expandir menu" : "Recolher menu"}
+        >
+          <span className="icon">⧉</span>{!collapsed && <span className="label">Recolher menu</span>}
+        </button>
       </div>
     </aside>
   );

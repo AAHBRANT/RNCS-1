@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Sidebar } from "../components/sidebar";
+import { Topbar } from "../components/topbar";
 import { deadlineResult, fmt } from "../../lib/rnc-deadline";
+import { useSidebarCollapse } from "../../lib/use-sidebar-collapse";
 
 type OverviewRnc = {
   id: number; workId: number; workName: string; number: string; year: number;
@@ -14,6 +16,7 @@ type AccessUser = { name: string; email: string; role: "admin" | "drafter" | "re
 const ALL = "all";
 
 export default function ResponderPage() {
+  const [collapsed, toggleCollapsed] = useSidebarCollapse();
   const [rncs, setRncs] = useState<OverviewRnc[]>([]);
   const [accessUser, setAccessUser] = useState<AccessUser | null>(null);
   const [outlook, setOutlook] = useState({ configured: false, connected: false });
@@ -77,12 +80,14 @@ export default function ResponderPage() {
 
   return (
     <div className="app-shell">
+      <Topbar activeUser={accessUser} collapsed={collapsed} onToggleCollapse={toggleCollapsed} />
       <Sidebar
-        activeUser={accessUser}
         activeWorkName={null}
         canCreateRnc={accessUser?.role === "admin"}
         outlook={outlook}
         syncing={false}
+        collapsed={collapsed}
+        onToggleCollapse={toggleCollapsed}
         onSync={() => { window.location.href = "/"; }}
         onNewRnc={() => { window.location.href = "/"; }}
         onExportExcel={() => { window.location.href = "/"; }}
@@ -91,12 +96,11 @@ export default function ResponderPage() {
       <main className="app-main">
         <section className="page-heading">
           <div><p className="eyebrow">Central de respostas</p><h1>Responder</h1><p>Acompanhe rascunhos em andamento e RNCs ainda sem resposta.</p></div>
+          <div className="responder-tabs">
+            <button type="button" className={tab === "andamento" ? "active" : ""} onClick={() => setTab("andamento")}>Respostas em andamento</button>
+            <button type="button" className={tab === "pendentes" ? "active" : ""} onClick={() => setTab("pendentes")}>Pendentes de resposta</button>
+          </div>
         </section>
-
-        <div className="responder-tabs">
-          <button type="button" className={tab === "andamento" ? "active" : ""} onClick={() => setTab("andamento")}>Respostas em andamento</button>
-          <button type="button" className={tab === "pendentes" ? "active" : ""} onClick={() => setTab("pendentes")}>Pendentes de resposta</button>
-        </div>
 
         <section className="workspace">
           <div className="filters">

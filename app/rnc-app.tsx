@@ -2,7 +2,9 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Sidebar } from "./components/sidebar";
+import { Topbar } from "./components/topbar";
 import { deadlineResult, fmt, hasAnsweredStatus, hasBeenAnswered } from "../lib/rnc-deadline";
+import { useSidebarCollapse } from "../lib/use-sidebar-collapse";
 
 export type Work = { id: number; name: string };
 type Rnc = {
@@ -58,6 +60,7 @@ function urgency(rnc: Rnc) {
 }
 
 export function RncApp() {
+  const [collapsed, toggleCollapsed] = useSidebarCollapse();
   const [works, setWorks] = useState<Work[]>([]);
   const [rows, setRows] = useState<Rnc[]>([]);
   const [activeWorkId, setActiveWorkId] = useState<number | null>(null);
@@ -354,7 +357,8 @@ export function RncApp() {
 
   return (
     <div className="app-shell">
-      <Sidebar activeUser={accessUser} activeWorkName={activeWork?.name || null} canCreateRnc={accessUser?.role === "admin"} outlook={outlook} syncing={syncing} onSync={syncEmails} onNewRnc={() => setShowForm(true)} onExportExcel={exportExcel} onExportPdf={() => window.print()} />
+      <Topbar activeUser={accessUser} collapsed={collapsed} onToggleCollapse={toggleCollapsed} />
+      <Sidebar activeWorkName={activeWork?.name || null} canCreateRnc={accessUser?.role === "admin"} outlook={outlook} syncing={syncing} collapsed={collapsed} onToggleCollapse={toggleCollapsed} onSync={syncEmails} onNewRnc={() => setShowForm(true)} onExportExcel={exportExcel} onExportPdf={() => window.print()} />
       <main className="app-main">
       <section className="page-heading">
         <div><p className="eyebrow">Visão geral</p><h1>Relatórios de Não Conformidade</h1><p>Acompanhe prazos, respostas e retornos da Supervisão.</p></div>
