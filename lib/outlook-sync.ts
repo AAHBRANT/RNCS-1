@@ -513,13 +513,13 @@ async function processMessage(
     let [rnc] = await db.select().from(rncs).where(and(
       eq(rncs.workId, work.id), eq(rncs.number, identity.number), eq(rncs.year, identity.year),
     )).limit(1);
-    // "envio_resposta" (officialSent/forwardedResponse) pode ser o primeiro contato
-    // sobre uma RNC (ex.: um colega respondeu com contato@... no To e Isabella em CC
-    // antes de qualquer "recebimento" oficial ter criado o registro) — nesse caso a
-    // criação abaixo (bloco `if (!rnc)`) já cobre isso normalmente. Só "retorno_supervisao"
-    // (análise de uma resposta) não deve criar uma RNC do zero — pressupõe que já exista.
-    if (!rnc && eventType === "retorno_supervisao") {
-      logMessageDiagnostic(message, sender, `retorno de supervisão para RNC ${identity.number}/${identity.year} que ainda não existe no banco`, { pasta: folder.path });
+    // Revertido: permitir que "envio_resposta"/"retorno_supervisao" criassem uma RNC
+    // do zero causou falsos positivos (e-mails que não são sobre RNC nenhuma, mas cujo
+    // assunto/anexo casualmente bate um padrão número/ano, geravam registros fantasma).
+    // Só "recebimento" (a RNC original chegando de contato@...) cria uma RNC nova —
+    // os demais eventos só atualizam uma RNC que já exista.
+    if (!rnc && eventType !== "recebimento") {
+      logMessageDiagnostic(message, sender, `RNC ${identity.number}/${identity.year} ainda não existe no banco e o evento não é um recebimento — não será criada`, { pasta: folder.path, eventType });
       continue;
     }
 
