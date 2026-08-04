@@ -12,6 +12,7 @@ export function Topbar({ activeUser, collapsed, onToggleCollapse }: TopbarProps)
   return (
     <header className="app-topbar">
       <div className="app-topbar-left">
+        <Image src="/favicon-rnc.png" alt="RNC" width={32} height={32} className="brand-mark" />
         <button
           className="sidebar-toggle"
           onClick={onToggleCollapse}
@@ -20,7 +21,6 @@ export function Topbar({ activeUser, collapsed, onToggleCollapse }: TopbarProps)
         >
           ☰
         </button>
-        <Image src="/favicon-rnc.png" alt="RNC" width={32} height={32} className="brand-mark" />
       </div>
 
       {activeUser && (

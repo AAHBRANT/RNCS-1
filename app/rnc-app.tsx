@@ -117,6 +117,7 @@ export function RncApp() {
           setWorks(data.works);
           setRows(data.rncs);
           setAccessUser(data.user || null);
+          setActiveWorkId(data.activeWorkId || null);
           setUpdatedLabel(new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date()));
         }
       })

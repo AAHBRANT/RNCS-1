@@ -70,18 +70,27 @@ export function Sidebar({
       </nav>
 
       <div className="sidebar-sync">
-        <span className="sidebar-sync-status" title={collapsed ? (outlook.connected ? "Outlook conectado" : "Operação manual") : undefined}>
-          <i className={outlook.connected ? "on" : ""} />
-          {!collapsed && (outlook.connected ? "Outlook conectado" : "Operação manual")}
-        </span>
-        <button
-          className="button secondary wide"
-          onClick={onSync}
-          disabled={syncing || (!outlook.configured && !outlook.connected)}
-          title={!outlook.configured ? "Configure as credenciais Microsoft na Vercel" : (syncing ? "Atualizando…" : outlook.connected ? "Atualizar e-mails" : "Conectar Outlook")}
-        >
-          {collapsed ? "↻" : (syncing ? "Atualizando…" : outlook.connected ? "↻ Atualizar e-mails" : "Conectar Outlook")}
-        </button>
+        {collapsed ? (
+          <i
+            className={`sidebar-sync-dot${outlook.connected ? " on" : ""}`}
+            title={outlook.connected ? "Outlook conectado" : "Operação manual"}
+          />
+        ) : (
+          <>
+            <span className="sidebar-sync-status">
+              <i className={outlook.connected ? "on" : ""} />
+              {outlook.connected ? "Outlook conectado" : "Operação manual"}
+            </span>
+            <button
+              className="button secondary wide"
+              onClick={onSync}
+              disabled={syncing || (!outlook.configured && !outlook.connected)}
+              title={!outlook.configured ? "Configure as credenciais Microsoft na Vercel" : (syncing ? "Atualizando…" : outlook.connected ? "Atualizar e-mails" : "Conectar Outlook")}
+            >
+              {syncing ? "Atualizando…" : outlook.connected ? "↻ Atualizar e-mails" : "Conectar Outlook"}
+            </button>
+          </>
+        )}
       </div>
 
       <div className="sidebar-footer">

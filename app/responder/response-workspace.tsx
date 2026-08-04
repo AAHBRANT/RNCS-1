@@ -1,7 +1,6 @@
 "use client";
 
 import { MouseEvent, useEffect, useMemo, useRef, useState } from "react";
-import { normalizeDocxForPreview } from "../../lib/docx-preview-normalizer";
 import { Sidebar } from "../components/sidebar";
 import { Topbar } from "../components/topbar";
 import { useSidebarCollapse } from "../../lib/use-sidebar-collapse";
@@ -64,28 +63,6 @@ function attachmentsFromEmails(emails: EmailEvent[]) {
   return [...new Map(attachments.map((item) => [item.id || item.name, item])).values()];
 }
 
-function fitPreviewTables(container: HTMLDivElement) {
-  container.querySelectorAll<HTMLElement>("section.rnc-docx-preview").forEach((page) => {
-    const pageStyle = window.getComputedStyle(page);
-    const pageRect = page.getBoundingClientRect();
-    const renderedScale = page.clientWidth ? pageRect.width / page.clientWidth : 1;
-    const contentRight = pageRect.right
-      - Number.parseFloat(pageStyle.paddingRight) * renderedScale;
-
-    page.querySelectorAll<HTMLTableElement>("table").forEach((table) => {
-      table.style.removeProperty("transform");
-      table.style.removeProperty("transform-origin");
-      const tableRect = table.getBoundingClientRect();
-      if (!tableRect.width || tableRect.right <= contentRight + 1) return;
-
-      const visibleWidth = Math.max(1, contentRight - tableRect.left);
-      const ratio = Math.min(1, visibleWidth / tableRect.width);
-      table.style.transformOrigin = "left top";
-      table.style.transform = `scaleX(${ratio})`;
-    });
-  });
-}
-
 export function ResponseWorkspace() {
   const [collapsed, toggleCollapsed] = useSidebarCollapse();
   const [outlook, setOutlook] = useState({ configured: false, connected: false });
@@ -99,6 +76,7 @@ export function ResponseWorkspace() {
   const [previewDocument, setPreviewDocument] = useState<WordDocument | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [previewZoom, setPreviewZoom] = useState(100);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [selectedAttachments, setSelectedAttachments] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -112,7 +90,6 @@ export function ResponseWorkspace() {
   const [pendingRncId, setPendingRncId] = useState("");
   const [pendingHref, setPendingHref] = useState("");
   const documentInput = useRef<HTMLInputElement>(null);
-  const previewContainer = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!previewDocument) return;
@@ -200,10 +177,9 @@ export function ResponseWorkspace() {
   }, [hasUnsavedChanges]);
 
   useEffect(() => {
-    if (!rnc || !previewDocument || !previewContainer.current) return;
+    if (!rnc || !previewDocument) return;
     let active = true;
-    const container = previewContainer.current;
-    container.replaceChildren();
+    let objectUrl: string | null = null;
     queueMicrotask(() => setPreviewing(true));
     fetch(`/api/rncs/${rnc.id}/response/document?document=${previewDocument.id}`)
       .then(async (response) => {
@@ -216,30 +192,11 @@ export function ResponseWorkspace() {
       })
       .then(async (buffer) => {
         if (!active) return;
-        const [previewBuffer, { renderAsync }] = await Promise.all([
-          normalizeDocxForPreview(buffer),
-          import("docx-preview"),
-        ]);
+        const { convertDocxToPdfBlob } = await import("../../lib/docx-to-pdf-preview");
+        const pdfBlob = await convertDocxToPdfBlob(buffer);
         if (!active) return;
-        await renderAsync(previewBuffer, container, undefined, {
-          className: "rnc-docx-preview",
-          inWrapper: true,
-          ignoreWidth: false,
-          ignoreHeight: false,
-          ignoreFonts: false,
-          breakPages: true,
-          useBase64URL: true,
-        });
-        await document.fonts.ready;
-        await new Promise<void>((resolve) => window.requestAnimationFrame(() =>
-          window.requestAnimationFrame(() => resolve()),
-        ));
-        if (active) {
-          fitPreviewTables(container);
-          window.setTimeout(() => {
-            if (active) fitPreviewTables(container);
-          }, 250);
-        }
+        objectUrl = URL.createObjectURL(pdfBlob);
+        setPreviewPdfUrl(objectUrl);
       })
       .catch((error) => {
         if (active) setNotice(error instanceof Error ? error.message : "Não foi possível abrir o documento.");
@@ -247,7 +204,11 @@ export function ResponseWorkspace() {
       .finally(() => {
         if (active) setPreviewing(false);
       });
-    return () => { active = false; };
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      setPreviewPdfUrl(null);
+    };
   }, [previewDocument, rnc]);
 
   function update(field: keyof Draft, value: string) {
@@ -503,7 +464,7 @@ export function ResponseWorkspace() {
           <section className="automatic-template-fields">
             <div><span>RNC Nº</span><strong>{rnc.number}/{rnc.year}</strong></div>
             <div><span>Data da emissão da RNC</span><strong>{formatDate(rnc.receivedAt)}</strong><small>Data do e-mail oficial recebido</small></div>
-            <div><span>Data da emissão da tratativa</span><strong>{formatDate(new Date().toISOString())}</strong><small>Data de hoje</small></div>
+            <div><span>Tipo da RNC</span><strong>{rnc.type}</strong></div>
             <div><span>Local / frente</span><strong>{rnc.workName}</strong></div>
             <div><span>Contrato</span><strong>{rnc.contract || "Não identificado no PDF"}</strong></div>
             <div><span>Responsável da área inspecionada</span><strong>{rnc.responseOwner || "Não identificado no PDF"}</strong></div>
@@ -547,7 +508,7 @@ export function ResponseWorkspace() {
               {documents.length ? documents.map((document, index) => <div key={document.id} className={index === 0 ? "latest" : ""}>
                 <span><strong>{index === 0 ? "Versão atual" : `Versão ${document.version}`}</strong><small>{document.fileName} · {(document.size / 1024).toFixed(0)} KB</small><small>{formatDate(document.createdAt)} · {document.uploadedBy}</small></span>
                 <div className="word-actions">
-                  <button className="button secondary" type="button" onClick={() => setPreviewDocument(document)}>Visualizar Word</button>
+                  <button className="button secondary" type="button" onClick={() => setPreviewDocument(document)}>Visualizar PDF</button>
                   <a className="button secondary link-button" href={`/api/rncs/${rnc.id}/response/document?document=${document.id}`}>Baixar Word</a>
                 </div>
               </div>) : <p className="muted">Nenhum documento Word anexado. O documento é obrigatório para a aprovação.</p>}
@@ -609,8 +570,17 @@ export function ResponseWorkspace() {
               <button className="button primary" type="button" onClick={() => setPreviewDocument(null)}>Fechar</button>
             </div>
           </header>
-          {previewing && <div className="document-preview-loading">Preparando visualização do Word…</div>}
-          <div className="document-preview-content"><div ref={previewContainer} style={{ zoom: `${previewZoom}%` }} /></div>
+          {previewing && <div className="document-preview-loading">Convertendo para PDF…</div>}
+          <div className="document-preview-content">
+            {previewPdfUrl && (
+              <iframe
+                src={previewPdfUrl}
+                title={`Pré-visualização em PDF de ${previewDocument.fileName}`}
+                className="rnc-pdf-preview"
+                style={{ zoom: `${previewZoom}%` }}
+              />
+            )}
+          </div>
           <footer>A visualização pode apresentar pequenas diferenças em relação ao Microsoft Word. O arquivo original não é alterado.</footer>
         </section>
       </div>}
