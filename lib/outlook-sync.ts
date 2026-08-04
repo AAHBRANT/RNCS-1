@@ -393,6 +393,42 @@ function addStats(total: SyncStats, next: SyncStats) {
   return total;
 }
 
+/**
+ * Classifica uma mensagem em relação ao e-mail oficial da Supervisão
+ * (OFFICIAL_EMAIL). CC é tratado exatamente como To — `recipientsList` já deve
+ * incluir ambos antes de chamar esta função. A posição do destinatário (To vs
+ * CC) nunca é usada como critério de exclusão aqui.
+ */
+export function classifyMessageKind(params: { sender: string; recipientsList: string[]; kind: FolderKind }) {
+  const { sender, recipientsList, kind } = params;
+  const officialIncoming = kind === "inbox" && sender === OFFICIAL_EMAIL;
+  const officialSent = (kind === "sent" && recipientsList.includes(OFFICIAL_EMAIL))
+    || (kind === "inbox" && sender !== OFFICIAL_EMAIL && recipientsList.includes(OFFICIAL_EMAIL));
+  const forwardedResponse = kind === "inbox" &&
+    sender.endsWith(AAHBRANT_DOMAIN) &&
+    recipientsList.includes(address(RESPONDER_EMAIL)) &&
+    recipientsList.includes(OFFICIAL_EMAIL);
+  return { officialIncoming, officialSent, forwardedResponse };
+}
+
+function logMessageDiagnostic(
+  message: GraphMessage,
+  sender: string,
+  reason: string,
+  extra: Record<string, unknown> = {},
+) {
+  console.log("[outlook-sync] mensagem", {
+    id: message.id,
+    remetente: sender,
+    destinatarios: (message.toRecipients || []).map((item) => address(item.emailAddress?.address)),
+    cc: (message.ccRecipients || []).map((item) => address(item.emailAddress?.address)),
+    assunto: message.subject || "",
+    temAnexos: Boolean(message.hasAttachments),
+    motivo: reason,
+    ...extra,
+  });
+}
+
 async function processMessage(
   accessToken: string, message: GraphMessage, folder: GraphFolder & { path: string }, kind: FolderKind,
   target?: Identity, reprocess = false,
@@ -402,14 +438,11 @@ async function processMessage(
   const sender = address(message.sender?.emailAddress?.address || message.from?.emailAddress?.address);
   const recipientsList = [...(message.toRecipients || []), ...(message.ccRecipients || [])]
     .map((item) => address(item.emailAddress?.address)).filter(Boolean);
-  const officialIncoming = kind === "inbox" && sender === OFFICIAL_EMAIL;
-  const officialSent = (kind === "sent" && recipientsList.includes(OFFICIAL_EMAIL))
-    || (kind === "inbox" && sender !== OFFICIAL_EMAIL && recipientsList.includes(OFFICIAL_EMAIL));
-  const forwardedResponse = kind === "inbox" &&
-    sender.endsWith(AAHBRANT_DOMAIN) &&
-    recipientsList.includes(address(RESPONDER_EMAIL)) &&
-    recipientsList.includes(OFFICIAL_EMAIL);
-  if (!officialIncoming && !officialSent && !forwardedResponse) return stats;
+  const { officialIncoming, officialSent, forwardedResponse } = classifyMessageKind({ sender, recipientsList, kind });
+  if (!officialIncoming && !officialSent && !forwardedResponse) {
+    logMessageDiagnostic(message, sender, "não classificada como mensagem oficial (nem recebimento, nem envio de resposta, nem repasse)", { pasta: folder.path });
+    return stats;
+  }
   stats.messagesAnalyzed = 1;
 
   const attachments = await attachmentsForMessage(accessToken, message);
@@ -454,10 +487,18 @@ async function processMessage(
     }
   }
   if (target) identities = identities.filter((item) => item.number === target.number && item.year === target.year);
-  if (!identities.length) return stats;
+  if (!identities.length) {
+    logMessageDiagnostic(message, sender, "nenhuma identidade de RNC (número/ano) encontrada no assunto, corpo ou nomes de anexo", {
+      pasta: folder.path, anexos: attachmentNames,
+    });
+    return stats;
+  }
 
   const [work] = await db.select().from(works).where(eq(works.name, workName)).limit(1);
-  if (!work) return stats;
+  if (!work) {
+    logMessageDiagnostic(message, sender, `obra "${workName}" não encontrada no banco`, { pasta: folder.path });
+    return stats;
+  }
   const occurredAt = message.sentDateTime || message.receivedDateTime || new Date().toISOString();
   const occurredDate = dateOnly(occurredAt);
   const isAnalysis = officialIncoming
@@ -465,11 +506,22 @@ async function processMessage(
   const eventType = (officialSent || forwardedResponse) ? "envio_resposta" : isAnalysis ? "retorno_supervisao" : "recebimento";
 
   for (const identity of identities) {
-    if ((officialSent || forwardedResponse || isAnalysis) && !identityIsStrong(identity, subject, attachmentNames) && !conversationLinked) continue;
+    if ((officialSent || forwardedResponse || isAnalysis) && !identityIsStrong(identity, subject, attachmentNames) && !conversationLinked) {
+      logMessageDiagnostic(message, sender, `identidade RNC ${identity.number}/${identity.year} não é forte o suficiente (não citada claramente no assunto/anexo) e não há conversationId vinculado`, { pasta: folder.path });
+      continue;
+    }
     let [rnc] = await db.select().from(rncs).where(and(
       eq(rncs.workId, work.id), eq(rncs.number, identity.number), eq(rncs.year, identity.year),
     )).limit(1);
-    if (!rnc && eventType !== "recebimento") continue;
+    // "envio_resposta" (officialSent/forwardedResponse) pode ser o primeiro contato
+    // sobre uma RNC (ex.: um colega respondeu com contato@... no To e Isabella em CC
+    // antes de qualquer "recebimento" oficial ter criado o registro) — nesse caso a
+    // criação abaixo (bloco `if (!rnc)`) já cobre isso normalmente. Só "retorno_supervisao"
+    // (análise de uma resposta) não deve criar uma RNC do zero — pressupõe que já exista.
+    if (!rnc && eventType === "retorno_supervisao") {
+      logMessageDiagnostic(message, sender, `retorno de supervisão para RNC ${identity.number}/${identity.year} que ainda não existe no banco`, { pasta: folder.path });
+      continue;
+    }
 
     const description = descriptionFromAttachment(identity, attachmentNames);
     const pdfInformation = pdfInformationForIdentity(attachments, identity);

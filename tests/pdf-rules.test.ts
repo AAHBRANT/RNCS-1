@@ -3,7 +3,7 @@ import test from "node:test";
 import { extractRncInformation } from "../lib/pdf/extract-rnc-information";
 import { processRncAttachment } from "../lib/pdf/process-rnc-attachment";
 import { analysisStatusFromEmailBody } from "../lib/rnc-analysis";
-import { explicitSentIdentities, extractIdentities, isGraphSearchStaleError } from "../lib/outlook-sync";
+import { classifyMessageKind, explicitSentIdentities, extractIdentities, isGraphSearchStaleError } from "../lib/outlook-sync";
 import { classifyRncType } from "../lib/pdf/classify-type";
 
 test("identifica número e ano da RNC", () => {
@@ -388,33 +388,42 @@ test("aceita a variação de título 'Nº DO CONTRATO' em tabela estruturada", (
 });
 
 test("detecta resposta enviada via CC na caixa de entrada", () => {
-  // Simula lógica de oficialSent: quando um e-mail está na inbox,
-  // vem de remetente diferente de contato@jampasustentável.com,
-  // mas tem contato@jampasustentável.com em to/cc, deve ser tratado como envio_resposta
   const OFFICIAL_EMAIL = "contato@jampasustentavel.com";
 
-  // Cenário 1: inbox + remetente diferente + OFFICIAL_EMAIL em recipientsList = true (nova regra)
-  const kind1: string = "inbox";
-  const sender1: string = "joao@aahbrant.com";
-  const recipientsList1: string[] = [OFFICIAL_EMAIL, "outro@email.com"];
-  const officialSent1 = (kind1 === "sent" && recipientsList1.includes(OFFICIAL_EMAIL))
-    || (kind1 === "inbox" && sender1 !== OFFICIAL_EMAIL && recipientsList1.includes(OFFICIAL_EMAIL));
-  assert.equal(officialSent1, true, "Deveria detectar resposta via CC na inbox");
+  // Cenário 1: colega envia da própria caixa (aparece na inbox de Isabella), com
+  // contato@jampasustentavel.com no To e Isabella só em CC — deve ser officialSent,
+  // independente de Isabella estar em To ou CC.
+  const result1 = classifyMessageKind({
+    sender: "joao@aahbrant.com",
+    recipientsList: [OFFICIAL_EMAIL, "outro@email.com"],
+    kind: "inbox",
+  });
+  assert.equal(result1.officialSent, true, "Deveria detectar resposta via CC na inbox");
 
-  // Cenário 2: sent + OFFICIAL_EMAIL em recipientsList = true (regra existente)
-  const kind2: string = "sent";
-  const sender2: string = "conta@aahbrant.com";
-  const recipientsList2: string[] = [OFFICIAL_EMAIL];
-  const officialSent2 = (kind2 === "sent" && recipientsList2.includes(OFFICIAL_EMAIL))
-    || (kind2 === "inbox" && sender2 !== OFFICIAL_EMAIL && recipientsList2.includes(OFFICIAL_EMAIL));
-  assert.equal(officialSent2, true, "Deveria detectar resposta enviada via Itens Enviados");
+  // Cenário 2: envio direto pela caixa de Itens Enviados (regra já existente).
+  const result2 = classifyMessageKind({
+    sender: "conta@aahbrant.com",
+    recipientsList: [OFFICIAL_EMAIL],
+    kind: "sent",
+  });
+  assert.equal(result2.officialSent, true, "Deveria detectar resposta enviada via Itens Enviados");
 
-  // Cenário 3: inbox + remetente É OFFICIAL_EMAIL + sem menção em recipientsList = false
-  // (entra em officialIncoming, não officialSent)
-  const kind3: string = "inbox";
-  const sender3: string = OFFICIAL_EMAIL;
-  const recipientsList3: string[] = [];
-  const officialSent3 = (kind3 === "sent" && recipientsList3.includes(OFFICIAL_EMAIL))
-    || (kind3 === "inbox" && sender3 !== OFFICIAL_EMAIL && recipientsList3.includes(OFFICIAL_EMAIL));
-  assert.equal(officialSent3, false, "RNC original não deveria ser detectada como oficialSent");
+  // Cenário 3: inbox + remetente É a própria supervisão + sem OFFICIAL_EMAIL nos
+  // destinatários — é a RNC original chegando (officialIncoming), não um envio de resposta.
+  const result3 = classifyMessageKind({
+    sender: OFFICIAL_EMAIL,
+    recipientsList: [],
+    kind: "inbox",
+  });
+  assert.equal(result3.officialSent, false, "RNC original não deveria ser detectada como officialSent");
+  assert.equal(result3.officialIncoming, true, "RNC original deveria ser detectada como officialIncoming");
+
+  // Cenário 4: mesmo caso do 1, mas com vários colegas em CC junto do OFFICIAL_EMAIL —
+  // a posição/quantidade de destinatários não deve importar, só a presença.
+  const result4 = classifyMessageKind({
+    sender: "maria@aahbrant.com",
+    recipientsList: ["pedro@aahbrant.com", OFFICIAL_EMAIL, "isabella.marques@aahbrant.com", "ana@aahbrant.com"],
+    kind: "inbox",
+  });
+  assert.equal(result4.officialSent, true, "Deveria detectar mesmo com várias pessoas copiadas");
 });
