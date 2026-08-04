@@ -547,6 +547,12 @@ async function processMessage(
       logMessageDiagnostic(message, sender, `identidade RNC ${identity.number}/${identity.year} não é forte o suficiente (não citada claramente no assunto/anexo) e não há conversationId vinculado`, { pasta: folder.path });
       continue;
     }
+    // Cada identidade é isolada num try/catch: numa mensagem com várias RNCs
+    // (ex.: um e-mail respondendo 249 e 251 juntos), um erro ao processar uma
+    // delas não pode derrubar silenciosamente as demais nem sumir sem log —
+    // antes disso, uma exceção aqui só aparecia como um console.error genérico
+    // lá em fullMailboxDossierScan, sem aparecer no relatório de diagnóstico.
+    try {
     let [rnc] = await db.select().from(rncs).where(and(
       eq(rncs.workId, work.id), eq(rncs.number, identity.number), eq(rncs.year, identity.year),
     )).limit(1);
@@ -911,6 +917,13 @@ async function processMessage(
       },
     });
     stats.eventsImported++;
+    } catch (error) {
+      logMessageDiagnostic(
+        message, sender,
+        `erro inesperado ao processar RNC ${identity.number}/${identity.year}: ${error instanceof Error ? error.message : String(error)}`,
+        { pasta: folder.path, eventType },
+      );
+    }
   }
   return stats;
 }
