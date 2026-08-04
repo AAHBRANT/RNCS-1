@@ -411,22 +411,40 @@ export function classifyMessageKind(params: { sender: string; recipientsList: st
   return { officialIncoming, officialSent, forwardedResponse };
 }
 
+export type OutlookDiagnosticEntry = {
+  id: string;
+  remetente: string;
+  destinatarios: string[];
+  cc: string[];
+  assunto: string;
+  temAnexos: boolean;
+  motivo: string;
+  nivel: "descarte" | "sucesso";
+  [extra: string]: unknown;
+};
+
+let diagnosticsCollector: OutlookDiagnosticEntry[] | null = null;
+
 function logMessageDiagnostic(
   message: GraphMessage,
   sender: string,
   reason: string,
   extra: Record<string, unknown> = {},
+  nivel: "descarte" | "sucesso" = "descarte",
 ) {
-  console.log("[outlook-sync] mensagem", {
-    id: message.id,
+  const entry: OutlookDiagnosticEntry = {
+    id: message.id || "",
     remetente: sender,
     destinatarios: (message.toRecipients || []).map((item) => address(item.emailAddress?.address)),
     cc: (message.ccRecipients || []).map((item) => address(item.emailAddress?.address)),
     assunto: message.subject || "",
     temAnexos: Boolean(message.hasAttachments),
     motivo: reason,
+    nivel,
     ...extra,
-  });
+  };
+  console.log("[outlook-sync] mensagem", entry);
+  if (diagnosticsCollector) diagnosticsCollector.push(entry);
 }
 
 async function processMessage(
@@ -601,10 +619,14 @@ async function processMessage(
       await recordConflict(rnc.id, "inspectionOwner", inspectionOwners);
       await recordConflict(rnc.id, "contract", contracts);
       await recordConflict(rnc.id, "analysisOwner", analysisReviewers);
+      logMessageDiagnostic(message, sender, `RNC ${identity.number}/${identity.year} criada com sucesso a partir desta mensagem`, { pasta: folder.path, eventType }, "sucesso");
     } else {
       const [alreadyImported] = await db.select({ id: emailEvents.id }).from(emailEvents)
         .where(and(eq(emailEvents.rncId, rnc.id), eq(emailEvents.outlookMessageId, message.id))).limit(1);
-      if (alreadyImported && !reprocess) continue;
+      if (alreadyImported && !reprocess) {
+        logMessageDiagnostic(message, sender, `mensagem já importada anteriormente para a RNC ${identity.number}/${identity.year} — ignorada nesta repetição`, { pasta: folder.path, rncId: rnc.id });
+        continue;
+      }
       const changes: Partial<typeof rncs.$inferInsert> = {};
       const sources = parsedJson<Record<string, string>>(rnc.fieldSources, {});
       const confidence = parsedJson<Record<string, Confidence>>(rnc.fieldConfidence, {});
@@ -832,6 +854,13 @@ async function processMessage(
         await db.update(rncs).set(changes).where(eq(rncs.id, rnc.id));
         stats.updatedRncs++;
       }
+      const alteracoes = Object.keys(changes).filter((key) => key !== "fieldSources" && key !== "fieldConfidence" && key !== "updatedAt");
+      logMessageDiagnostic(
+        message, sender,
+        `RNC ${identity.number}/${identity.year} processada${alteracoes.length ? "" : " (nenhum campo elegível para atualização automática mudou)"}`,
+        { pasta: folder.path, eventType, alteracoes },
+        "sucesso",
+      );
     }
 
     const associationConfidence = identityIsStrong(identity, subject, attachmentNames) ? 5 : conversationLinked ? 4 : 3;
@@ -1032,14 +1061,16 @@ async function reconcileDossiers(stats: SyncStats, target?: Identity) {
   }
 }
 
-export async function synchronizeOutlook(options: { force?: boolean; targetRncId?: number; cursor?: string } = {}) {
+export async function synchronizeOutlook(
+  options: { force?: boolean; targetRncId?: number; cursor?: string; diagnostics?: boolean } = {},
+) {
   await ensureDatabase();
   const db = getDb();
   await protectOnlyRealManualCorrections();
   const [connection] = await db.select().from(outlookConnections).limit(1);
   if (!connection) throw new Error("Conecte primeiro a conta do Outlook.");
   if (!options.force && connection.lastSyncAt && Date.now() - new Date(connection.lastSyncAt).getTime() < 60_000) {
-    return { imported: 0, folders: 0, message: "Os e-mails já foram atualizados há menos de um minuto." };
+    return { imported: 0, folders: 0, message: "Os e-mails já foram atualizados há menos de um minuto.", diagnostics: [] as OutlookDiagnosticEntry[] };
   }
   let target: Identity | undefined;
   if (options.targetRncId) {
@@ -1053,6 +1084,7 @@ export async function synchronizeOutlook(options: { force?: boolean; targetRncId
       .where(eq(outlookConnections.id, connection.id));
   }
   const [run] = await db.insert(syncRuns).values({ connectionId: connection.id }).returning();
+  if (options.diagnostics) diagnosticsCollector = [];
   try {
     let folders: Array<GraphFolder & { path: string; kind: FolderKind }>;
     const stats = emptyStats();
@@ -1087,6 +1119,7 @@ export async function synchronizeOutlook(options: { force?: boolean; targetRncId
       return {
         ...stats, folders: folders.length, foldersChecked: folders.map((folder) => folder.path),
         complete, nextCursor: dossier.nextCursor, message,
+        diagnostics: diagnosticsCollector ? [...diagnosticsCollector] : undefined,
       };
     } else {
       folders = await discoverFolders(token.access_token!);
@@ -1113,7 +1146,10 @@ export async function synchronizeOutlook(options: { force?: boolean; targetRncId
         importedCount: stats.eventsImported, message,
       }).where(eq(syncRuns.id, run.id)),
     ]);
-    return { ...stats, folders: folders.length, foldersChecked: folders.map((folder) => folder.path), message };
+    return {
+      ...stats, folders: folders.length, foldersChecked: folders.map((folder) => folder.path), message,
+      diagnostics: diagnosticsCollector ? [...diagnosticsCollector] : undefined,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Falha na sincronização.";
     const finishedAt = new Date().toISOString();
@@ -1123,5 +1159,7 @@ export async function synchronizeOutlook(options: { force?: boolean; targetRncId
       db.update(syncRuns).set({ finishedAt, status: "error", message }).where(eq(syncRuns.id, run.id)),
     ]);
     throw error;
+  } finally {
+    diagnosticsCollector = null;
   }
 }

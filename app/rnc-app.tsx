@@ -31,6 +31,10 @@ export type OutlookStatus = {
   connection?: { lastSyncAt?: string | null; lastSyncMessage?: string | null };
 };
 export type AccessUser = { name: string; email: string; role: "admin" | "drafter" | "reviewer_approver" };
+type OutlookDiagnosticEntry = {
+  id: string; remetente: string; destinatarios: string[]; cc: string[]; assunto: string;
+  temAnexos: boolean; motivo: string; nivel: "descarte" | "sucesso"; [extra: string]: unknown;
+};
 
 const statusOptions = ["Recebida", "Em elaboração", "Respondida", "Aprovada", "Reprovada", "Reaberta", "Retorno recebido — status a confirmar", "Não identificado"];
 const defaultTypeOptions = ["Engenharia", "Segurança do Trabalho", "Ambiental", "Social", "A classificar"];
@@ -78,6 +82,9 @@ export function RncApp() {
     analyzed: number; corrected: number; unchanged: number;
     needsManualReview: Array<{ id: number; number: string; year: number; previousType: string }>;
   } | null>(null);
+  const [diagnosticsReport, setDiagnosticsReport] = useState<OutlookDiagnosticEntry[] | null>(null);
+  const [showDiagnosticsModal, setShowDiagnosticsModal] = useState(false);
+  const [diagnosticsFilter, setDiagnosticsFilter] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [selected, setSelected] = useState<Rnc | null>(null);
   const [history, setHistory] = useState<Audit[]>([]);
@@ -184,6 +191,7 @@ export function RncApp() {
         messagesAnalyzed: 0, newRncs: 0, updatedRncs: 0, ownersIdentified: 0,
         sentDatesCorrected: 0, returnsProcessed: 0, statusesUpdated: 0,
       };
+      const diagnostics: OutlookDiagnosticEntry[] = [];
       while (!complete && batches < 500) {
         // A serverless function that times out server-side can drop the connection
         // without ever sending a response. Without a client-side abort, fetch() waits
@@ -195,7 +203,7 @@ export function RncApp() {
           response = await fetch("/api/outlook/sync", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ cursor }),
+            body: JSON.stringify({ cursor, diagnostics: true }),
             signal: controller.signal,
           });
         } catch (error) {
@@ -212,12 +220,14 @@ export function RncApp() {
           : { error: "Uma etapa da sincronização excedeu o tempo disponível. Clique novamente para tentar outra vez." };
         if (!response.ok) throw new Error(data.error || "Falha ao atualizar e-mails.");
         for (const key of Object.keys(totals) as Array<keyof typeof totals>) totals[key] += Number(data[key] || 0);
+        if (Array.isArray(data.diagnostics)) diagnostics.push(...data.diagnostics);
         cursor = data.nextCursor;
         complete = data.complete !== false;
         batches++;
         setNotice(data.message);
       }
       if (!complete) throw new Error("A sincronização atingiu o limite de etapas. Clique novamente para continuar.");
+      setDiagnosticsReport(diagnostics);
       const message = [
         `${totals.messagesAnalyzed} mensagens oficiais analisadas`,
         `${totals.newRncs} novas RNC encontradas`,
@@ -394,6 +404,11 @@ export function RncApp() {
       <main className="app-main">
       <section className="page-heading">
         <div><p className="eyebrow">Visão geral</p><h1>Relatórios de Não Conformidade</h1><p>Acompanhe prazos, respostas e retornos da Supervisão.</p></div>
+        {accessUser?.role === "admin" && diagnosticsReport && (
+          <button className="button secondary" onClick={() => setShowDiagnosticsModal(true)}>
+            Ver diagnóstico técnico ({diagnosticsReport.length})
+          </button>
+        )}
       </section>
 
       <p className="metric-group-label">Situação das RNCs — categorias exclusivas</p>
@@ -472,6 +487,37 @@ export function RncApp() {
           )}
         </div>
       </Modal>}
+      {showDiagnosticsModal && diagnosticsReport && (() => {
+        const term = diagnosticsFilter.trim().toLocaleLowerCase("pt-BR");
+        const filtered = !term ? diagnosticsReport : diagnosticsReport.filter((entry) =>
+          `${entry.assunto} ${entry.remetente} ${entry.motivo} ${entry.cc.join(" ")} ${entry.destinatarios.join(" ")}`
+            .toLocaleLowerCase("pt-BR").includes(term));
+        const successCount = diagnosticsReport.filter((entry) => entry.nivel === "sucesso").length;
+        return (
+          <Modal title="Diagnóstico da sincronização" onClose={() => setShowDiagnosticsModal(false)}>
+            <div className="reclassify-report diagnostics-report">
+              <p><strong>{successCount}</strong> mensagem(ns) processada(s) com sucesso · <strong>{diagnosticsReport.length - successCount}</strong> descartada(s)</p>
+              <input
+                className="diagnostics-search"
+                placeholder="Filtrar por assunto, remetente, CC ou motivo…"
+                value={diagnosticsFilter}
+                onChange={(event) => setDiagnosticsFilter(event.target.value)}
+              />
+              <ul className="diagnostics-list">
+                {filtered.map((entry, index) => (
+                  <li key={`${entry.id}-${index}`} className={entry.nivel === "sucesso" ? "success" : "discard"}>
+                    <strong>{entry.assunto || "(sem assunto)"}</strong>
+                    <span className="diagnostics-badge">{entry.nivel === "sucesso" ? "sucesso" : "descarte"}</span>
+                    <small>De: {entry.remetente} · Para: {entry.destinatarios.join(", ") || "—"}{entry.cc.length ? ` · CC: ${entry.cc.join(", ")}` : ""}</small>
+                    <p>{entry.motivo}</p>
+                  </li>
+                ))}
+                {!filtered.length && <li>Nenhum registro encontrado para esse filtro.</li>}
+              </ul>
+            </div>
+          </Modal>
+        );
+      })()}
       {showForm && <Modal title="Cadastrar nova RNC" onClose={() => setShowForm(false)}><RncForm works={works} typeOptions={typeOptions} activeWorkId={activeWorkId} onSubmit={createRnc} /></Modal>}
       {editing && <Modal title={`Editar RNC ${editing.number}`} onClose={() => setEditing(null)}><RncForm works={works} typeOptions={typeOptions} rnc={editing} activeWorkId={activeWorkId} onSubmit={saveRnc} /></Modal>}
       {selected && <aside className="drawer">
