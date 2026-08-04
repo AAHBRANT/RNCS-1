@@ -146,12 +146,32 @@ export function addBusinessDays(value: string, days = 5) {
   return date.toISOString().slice(0, 10);
 }
 
-async function graph<T>(accessToken: string, url: string): Promise<T> {
-  const response = await fetch(url.startsWith("http") ? url : `https://graph.microsoft.com/v1.0${url}`, {
-    headers: { authorization: `Bearer ${accessToken}`, Prefer: "odata.maxpagesize=100" },
-    cache: "no-store",
-  });
+const GRAPH_MAX_ATTEMPTS = 4;
+const GRAPH_TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504]);
+
+async function graph<T>(accessToken: string, url: string, attempt = 1): Promise<T> {
+  const fullUrl = url.startsWith("http") ? url : `https://graph.microsoft.com/v1.0${url}`;
+  let response: Response;
+  try {
+    response = await fetch(fullUrl, {
+      headers: { authorization: `Bearer ${accessToken}`, Prefer: "odata.maxpagesize=100" },
+      cache: "no-store",
+    });
+  } catch (error) {
+    // Falha de rede (ex.: conexão resetada) — mesmo tratamento de retry de uma
+    // resposta 5xx, já que ambas são instabilidades passageiras do lado da rede
+    // ou dos servidores da Microsoft, não erros do nosso código.
+    if (attempt >= GRAPH_MAX_ATTEMPTS) throw error;
+    await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+    return graph<T>(accessToken, url, attempt + 1);
+  }
   if (!response.ok) {
+    if (GRAPH_TRANSIENT_STATUSES.has(response.status) && attempt < GRAPH_MAX_ATTEMPTS) {
+      const retryAfter = Number(response.headers.get("retry-after"));
+      const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : attempt * 1000;
+      await new Promise((resolve) => setTimeout(resolve, wait));
+      return graph<T>(accessToken, url, attempt + 1);
+    }
     const detail = await response.text();
     throw new Error(`Microsoft Graph respondeu ${response.status}: ${detail.slice(0, 300)}`);
   }
