@@ -3,7 +3,7 @@ import test from "node:test";
 import { extractRncInformation } from "../lib/pdf/extract-rnc-information";
 import { processRncAttachment } from "../lib/pdf/process-rnc-attachment";
 import { analysisStatusFromEmailBody } from "../lib/rnc-analysis";
-import { classifyMessageKind, explicitSentIdentities, extractIdentities, isGraphSearchStaleError } from "../lib/outlook-sync";
+import { classifyMessageKind, explicitSentIdentities, extractIdentities } from "../lib/outlook-sync";
 import { classifyRncType } from "../lib/pdf/classify-type";
 
 test("identifica número e ano da RNC", () => {
@@ -235,13 +235,6 @@ test("classifica não conformidades de segurança do trabalho, ambiental e socia
 
 test("retorna null quando não há palavras-chave suficientes ou há empate entre categorias", () => {
   assert.equal(classifyRncType("Documento sem nenhuma palavra-chave reconhecível").type, null);
-});
-
-test("reconhece cursor de pesquisa invalidado pelo Microsoft Graph", () => {
-  assert.equal(isGraphSearchStaleError(new Error(
-    'Microsoft Graph respondeu 400: {"error":{"code":"ErrorExecuteSearchStaleData","message":"Please reissue the query with rowOffset = 0. The specified rowoffset is 10, but the results are stale."}}',
-  )), true);
-  assert.equal(isGraphSearchStaleError(new Error("Erro de autenticação")), false);
 });
 
 test("aceita anexo com RNC e padrão número-ano", () => {

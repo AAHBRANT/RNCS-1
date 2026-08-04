@@ -178,12 +178,6 @@ async function graph<T>(accessToken: string, url: string, attempt = 1): Promise<
   return response.json() as Promise<T>;
 }
 
-export function isGraphSearchStaleError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error || "");
-  return message.includes("ErrorExecuteSearchStaleData")
-    || /rowOffset\s*=\s*0[\s\S]*results are stale/i.test(message);
-}
-
 async function allPages<T>(accessToken: string, initialUrl: string) {
   const values: T[] = [];
   let url: string | undefined = initialUrl;
@@ -916,6 +910,16 @@ async function processMessage(
   return stats;
 }
 
+const MESSAGE_SELECT_FIELDS = "id,internetMessageId,conversationId,parentFolderId,subject,bodyPreview,body,receivedDateTime,sentDateTime,sender,from,toRecipients,ccRecipients,hasAttachments,internetMessageHeaders";
+
+function syncSinceIso() {
+  // The historical archive is already persisted in the database. Keeping the
+  // first Graph pass bounded prevents a serverless timeout; the delta link
+  // (ou, na varredura completa, o cursor entre invocações) cobre o restante.
+  const days = Math.max(1, Math.min(120, Number(process.env.OUTLOOK_INITIAL_SYNC_DAYS || 120)));
+  return new Date(Date.now() - days * 86400000).toISOString();
+}
+
 async function syncFolder(
   accessToken: string, connectionId: number, folder: GraphFolder & { path: string },
   kind: FolderKind, force: boolean, target?: Identity,
@@ -924,15 +928,10 @@ async function syncFolder(
   const [state] = await db.select().from(outlookSyncFolders).where(and(
     eq(outlookSyncFolders.connectionId, connectionId), eq(outlookSyncFolders.folderId, folder.id),
   )).limit(1);
-  // The historical archive is already persisted in the database. Keeping the
-  // first Graph pass bounded prevents a serverless timeout; the delta link
-  // stored at the end of the pass handles every subsequent message.
-  const days = Math.max(1, Math.min(120, Number(process.env.OUTLOOK_INITIAL_SYNC_DAYS || 120)));
-  const since = new Date(Date.now() - days * 86400000).toISOString();
-  const select = "id,internetMessageId,conversationId,parentFolderId,subject,bodyPreview,body,receivedDateTime,sentDateTime,sender,from,toRecipients,ccRecipients,hasAttachments,internetMessageHeaders";
+  const since = syncSinceIso();
   let url = !force && state?.deltaLink
     ? state.deltaLink
-    : `/me/mailFolders/${encodeURIComponent(folder.id)}/messages/delta?$select=${select}&$filter=receivedDateTime ge ${since}`;
+    : `/me/mailFolders/${encodeURIComponent(folder.id)}/messages/delta?$select=${MESSAGE_SELECT_FIELDS}&$filter=receivedDateTime ge ${since}`;
   const stats = emptyStats();
   let deltaLink: string | undefined;
   do {
@@ -980,49 +979,54 @@ async function protectOnlyRealManualCorrections() {
   }
 }
 
+type DossierCursorState = { folderIndex: number; nextLink?: string };
+
+// O índice de busca por texto do Graph (`$search=participants:...`) é
+// documentadamente inconsistente: mensagens que deveriam bater no filtro às
+// vezes simplesmente não voltam no resultado, sem erro, sem padrão previsível
+// (comprovado com dados reais — respostas do Pedro para contato@jampa que
+// funcionaram num envio e desapareceram em outro, mesmo formato). Por isso a
+// varredura completa nunca usa `$search`: percorre pasta por pasta e lista
+// literalmente todas as mensagens dentro da janela de sincronização, o mesmo
+// filtro de data já usado por `syncFolder` — sem depender de nenhum índice.
+const DOSSIER_BATCH_LIMIT = 20;
+
 async function fullMailboxDossierScan(accessToken: string, target?: Identity, cursor?: string) {
   const folders = await discoverFolders(accessToken);
-  const byId = new Map(folders.map((folder) => [folder.id, folder]));
-  const select = "id,internetMessageId,conversationId,parentFolderId,subject,bodyPreview,body,receivedDateTime,sentDateTime,sender,from,toRecipients,ccRecipients,hasAttachments,internetMessageHeaders";
-  const search = encodeURIComponent(target
-    ? `"${Number(target.number)}/${target.year}"`
-    : `"participants:${OFFICIAL_EMAIL}"`);
-  // Search cursors are cache snapshots maintained by Microsoft Graph. When the
-  // mailbox changes between requests, Graph can invalidate a nextLink and ask
-  // the client to restart at rowOffset 0. Restart transparently with a fresh
-  // search key instead of exposing the technical Graph error to the user.
-  const initialUrl = `/me/messages?$search=${search}&$select=${select}&$top=1`;
-  let page: GraphPage<GraphMessage>;
-  try {
-    page = await graph<GraphPage<GraphMessage>>(accessToken, cursor || initialUrl);
-  } catch (error) {
-    if (!cursor || !isGraphSearchStaleError(error)) throw error;
-    page = await graph<GraphPage<GraphMessage>>(accessToken, initialUrl);
-  }
-  const messages = page.value;
-  messages.sort((a, b) =>
-    String(a.sentDateTime || a.receivedDateTime).localeCompare(String(b.sentDateTime || b.receivedDateTime)));
+  const since = syncSinceIso();
+  const state: DossierCursorState = cursor ? JSON.parse(cursor) : { folderIndex: 0 };
   const stats = emptyStats();
-  for (const message of messages) {
-    const recipients = [...(message.toRecipients || []), ...(message.ccRecipients || [])]
-      .map((item) => address(item.emailAddress?.address));
-    const kind: FolderKind = recipients.includes(OFFICIAL_EMAIL) ? "sent" : "inbox";
-    const knownFolder = message.parentFolderId ? byId.get(message.parentFolderId) : undefined;
-    const folder = knownFolder || {
-      id: message.parentFolderId || "search",
-      displayName: "Pesquisa geral do Outlook",
-      path: "Pesquisa geral do Outlook",
-      kind,
-    };
-    try {
-      addStats(stats, await processMessage(accessToken, message, folder, kind, target, true));
-    } catch (error) {
-      // A malformed attachment or isolated Graph response must not prevent the
-      // continuation cursor from advancing through the rest of the mailbox.
-      console.error("Mensagem ignorada durante a montagem do dossiê:", message.id, error);
+  let processed = 0;
+
+  while (state.folderIndex < folders.length && processed < DOSSIER_BATCH_LIMIT) {
+    const folder = folders[state.folderIndex];
+    const url = state.nextLink
+      || `/me/mailFolders/${encodeURIComponent(folder.id)}/messages?$select=${MESSAGE_SELECT_FIELDS}&$filter=receivedDateTime ge ${since}&$orderby=receivedDateTime&$top=25`;
+    const page: GraphPage<GraphMessage> = await graph(accessToken, url);
+    for (const message of page.value) {
+      const recipients = [...(message.toRecipients || []), ...(message.ccRecipients || [])]
+        .map((item) => address(item.emailAddress?.address));
+      const kind: FolderKind = recipients.includes(OFFICIAL_EMAIL) ? "sent" : "inbox";
+      try {
+        addStats(stats, await processMessage(accessToken, message, folder, kind, target, true));
+      } catch (error) {
+        // A malformed attachment or isolated Graph response must not prevent the
+        // continuation cursor from advancing through the rest of the mailbox.
+        console.error("Mensagem ignorada durante a montagem do dossiê:", message.id, error);
+      }
+      processed++;
     }
+    if (page["@odata.nextLink"]) {
+      state.nextLink = page["@odata.nextLink"];
+    } else {
+      state.folderIndex++;
+      state.nextLink = undefined;
+    }
+    if (processed >= DOSSIER_BATCH_LIMIT) break;
   }
-  return { folders, stats, nextCursor: page["@odata.nextLink"] };
+
+  const complete = state.folderIndex >= folders.length;
+  return { folders, stats, nextCursor: complete ? undefined : JSON.stringify(state) };
 }
 
 async function reconcileDossiers(stats: SyncStats, target?: Identity) {
