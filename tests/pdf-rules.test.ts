@@ -244,6 +244,7 @@ test("aceita anexo com RNC e padrão número-ano", () => {
     ["rnc-123_2026.pdf", "123"],
     ["Encaminhamento RNC nº 123-2026.pdf", "123"],
     ["FG 13 - TRATATIVA DE RNC 159_2026.pdf", "159"],
+    ["TRATATIVA_RNC_251_2026_.pdf", "251"],
   ] as const;
   for (const [attachmentName, expectedNumber] of cases) {
     const result = extractIdentities("", [attachmentName], "");

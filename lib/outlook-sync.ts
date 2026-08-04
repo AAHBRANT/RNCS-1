@@ -68,14 +68,19 @@ export function extractIdentities(subject: string, attachmentNames: string[], bo
     const identity = { number: number.padStart(3, "0"), year: parsedYear };
     found.set(`${identity.number}/${identity.year}`, identity);
   };
+  // `\b` não é suficiente aqui porque "_" conta como caractere de palavra em
+  // regex — nomes de anexo como "TRATATIVA_RNC_251_2026_.pdf" (underscore dos
+  // dois lados de "RNC" e do ano) não geram fronteira nenhuma com `\b`, então
+  // a extração falhava silenciosamente. `(?<![a-zA-Z0-9])`/`(?![a-zA-Z0-9])`
+  // tratam "_" como separador válido, igual espaço, ponto ou hífen.
   // Extract from subject: numbers without RNC keyword (soft extraction)
-  for (const match of subject.matchAll(/\b(\d{1,6})\s*[./_-]\s*(20\d{2}|\d{2})\b/g)) add(match[1], match[2]);
+  for (const match of subject.matchAll(/(?<![a-zA-Z0-9])(\d{1,6})\s*[./_-]\s*(20\d{2}|\d{2})(?![a-zA-Z0-9])/g)) add(match[1], match[2]);
   // Extract from attachment names: REQUIRE "RNC" keyword nearby
   for (const name of attachmentNames) {
-    for (const match of name.matchAll(/\bRNCs?\s*(?:N[º°o.]?\s*)?[-–—_/:]?\s*(\d{1,6})\s*[./_-]\s*(20\d{2}|\d{2})\b/gi)) add(match[1], match[2]);
+    for (const match of name.matchAll(/(?<![a-zA-Z0-9])RNCs?\s*(?:N[º°o.]?\s*)?[-–—_/:]?\s*(\d{1,6})\s*[./_-]\s*(20\d{2}|\d{2})(?![a-zA-Z0-9])/gi)) add(match[1], match[2]);
   }
   // Extract from subject and body: REQUIRE "RNC" keyword
-  for (const match of `${subject}\n${body}`.matchAll(/\bRNCs?\s*(?:N[º°o.]?\s*)?[-–—:#]?\s*(\d{1,6})\s*[./-]\s*(20\d{2}|\d{2})\b/gi)) {
+  for (const match of `${subject}\n${body}`.matchAll(/(?<![a-zA-Z0-9])RNCs?\s*(?:N[º°o.]?\s*)?[-–—:#]?\s*(\d{1,6})\s*[./-]\s*(20\d{2}|\d{2})(?![a-zA-Z0-9])/gi)) {
     add(match[1], match[2]);
   }
   return [...found.values()];
