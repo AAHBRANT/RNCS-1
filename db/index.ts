@@ -81,6 +81,8 @@ async function initializeDatabaseOnce() {
   await sql`ALTER TABLE rncs ADD COLUMN IF NOT EXISTS inspection_owner TEXT NOT NULL DEFAULT ''`;
   await sql`ALTER TABLE rncs ADD COLUMN IF NOT EXISTS contract TEXT NOT NULL DEFAULT ''`;
   await sql`ALTER TABLE rncs ADD COLUMN IF NOT EXISTS inspection_date TEXT`;
+  await sql`ALTER TABLE rncs ADD COLUMN IF NOT EXISTS issued_at TEXT`;
+  await sql`ALTER TABLE rncs ADD COLUMN IF NOT EXISTS service_location TEXT NOT NULL DEFAULT ''`;
   await sql`ALTER TABLE rncs ALTER COLUMN received_at DROP NOT NULL`;
   await sql`ALTER TABLE rncs ALTER COLUMN due_at DROP NOT NULL`;
   await sql`CREATE INDEX IF NOT EXISTS rncs_status_idx ON rncs(status)`;

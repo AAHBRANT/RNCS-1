@@ -1,26 +1,13 @@
-import { desc } from "drizzle-orm";
-import { ensureDatabase, getDb } from "../../../../db";
-import { rncs } from "../../../../db/schema";
+import { ensureDatabase } from "../../../../db";
 import { sessionFromRequest, unauthorized } from "../../../../lib/access-control";
-
-const defaultTypes = ["Segurança do Trabalho", "Ambiental", "Qualidade", "Projeto", "Execução", "Documental", "Outro", "A classificar"];
+import { RNC_TYPES } from "../../../../lib/pdf/classify-type";
 
 export async function GET(request: Request) {
   try {
     const session = sessionFromRequest(request);
     if (!session) return unauthorized();
     await ensureDatabase();
-    const db = getDb();
-    const rows = await db.selectDistinct({ type: rncs.type }).from(rncs).orderBy(desc(rncs.type));
-    const types = [...new Set([
-      ...defaultTypes,
-      ...rows.map((row) => row.type).filter((type) => type && type !== "A classificar"),
-    ])].sort((a, b) => {
-      if (a === "A classificar") return 1;
-      if (b === "A classificar") return -1;
-      return a.localeCompare(b, "pt-BR");
-    });
-    return new Response(JSON.stringify({ types }), {
+    return new Response(JSON.stringify({ types: [...RNC_TYPES, "A classificar"] }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });

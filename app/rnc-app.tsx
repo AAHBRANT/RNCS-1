@@ -12,6 +12,7 @@ type Rnc = {
   description: string; type: string; receivedAt: string | null; dueAt: string | null;
   sentAt: string | null; returnedAt: string | null; inspectionDate: string | null; status: string; notes: string;
   responseOwner: string; inspectionOwner: string; contract: string; analysisOwner: string; updatedAt: string;
+  issuedAt: string | null; serviceLocation: string;
   fieldSources: string; fieldConfidence: string; manualFields: string; sourceSummary: string;
 };
 type Audit = { id: number; field: string; oldValue: string | null; newValue: string | null; changedAt: string; userName: string };
@@ -32,7 +33,7 @@ export type OutlookStatus = {
 export type AccessUser = { name: string; email: string; role: "admin" | "drafter" | "reviewer_approver" };
 
 const statusOptions = ["Recebida", "Em elaboração", "Respondida", "Aprovada", "Reprovada", "Reaberta", "Retorno recebido — status a confirmar", "Não identificado"];
-const defaultTypeOptions = ["Segurança do Trabalho", "Ambiental", "Qualidade", "Projeto", "Execução", "Documental", "Outro", "A classificar"];
+const defaultTypeOptions = ["Engenharia", "Segurança do Trabalho", "Ambiental", "Social", "A classificar"];
 const PAGE_SIZE = 20;
 const labelByField: Record<string, string> = {
   registro: "Registro", workId: "Obra", number: "Nº RNC", year: "Ano",
@@ -72,6 +73,11 @@ export function RncApp() {
   const [currentPage, setCurrentPage] = useState(1);
   const [busy, setBusy] = useState(true);
   const [notice, setNotice] = useState("");
+  const [reclassifying, setReclassifying] = useState(false);
+  const [reclassifyReport, setReclassifyReport] = useState<{
+    analyzed: number; corrected: number; unchanged: number;
+    needsManualReview: Array<{ id: number; number: string; year: number; previousType: string }>;
+  } | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [selected, setSelected] = useState<Rnc | null>(null);
   const [history, setHistory] = useState<Audit[]>([]);
@@ -352,6 +358,21 @@ export function RncApp() {
     URL.revokeObjectURL(link.href);
   }
 
+  async function reclassifyTypes() {
+    setReclassifying(true);
+    try {
+      const response = await fetch("/api/rncs/reclassify-types", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Falha ao reclassificar os tipos.");
+      setReclassifyReport(data);
+      await load();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Falha ao reclassificar os tipos.");
+    } finally {
+      setReclassifying(false);
+    }
+  }
+
   const years = [...new Set(rows.map((r) => r.year))].sort((a, b) => b - a);
   const activeWork = activeWorkId ? works.find((w) => w.id === activeWorkId) : null;
 
@@ -362,6 +383,11 @@ export function RncApp() {
       <main className="app-main">
       <section className="page-heading">
         <div><p className="eyebrow">Visão geral</p><h1>Relatórios de Não Conformidade</h1><p>Acompanhe prazos, respostas e retornos da Supervisão.</p></div>
+        {accessUser?.role === "admin" && (
+          <button className="button secondary" onClick={reclassifyTypes} disabled={reclassifying}>
+            {reclassifying ? "Reclassificando…" : "Reclassificar tipos"}
+          </button>
+        )}
       </section>
 
       <p className="metric-group-label">Situação das RNCs — categorias exclusivas</p>
@@ -416,6 +442,23 @@ export function RncApp() {
       </section>
 
       {notice && <button className="toast" onClick={() => setNotice("")}>{notice}<span>×</span></button>}
+      {reclassifyReport && <Modal title="Relatório de reclassificação de tipos" onClose={() => setReclassifyReport(null)}>
+        <div className="reclassify-report">
+          <p><strong>{reclassifyReport.analyzed}</strong> RNC(s) analisada(s)</p>
+          <p><strong>{reclassifyReport.corrected}</strong> corrigida(s)</p>
+          <p><strong>{reclassifyReport.unchanged}</strong> permaneceram inalteradas</p>
+          {reclassifyReport.needsManualReview.length > 0 && (
+            <>
+              <h4>Precisam de revisão manual</h4>
+              <ul>
+                {reclassifyReport.needsManualReview.map((item) => (
+                  <li key={item.id}>RNC {item.number}/{item.year} — tipo atual: {item.previousType || "(vazio)"}</li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      </Modal>}
       {showForm && <Modal title="Cadastrar nova RNC" onClose={() => setShowForm(false)}><RncForm works={works} typeOptions={typeOptions} activeWorkId={activeWorkId} onSubmit={createRnc} /></Modal>}
       {editing && <Modal title={`Editar RNC ${editing.number}`} onClose={() => setEditing(null)}><RncForm works={works} typeOptions={typeOptions} rnc={editing} activeWorkId={activeWorkId} onSubmit={saveRnc} /></Modal>}
       {selected && <aside className="drawer">
@@ -423,7 +466,7 @@ export function RncApp() {
         <div className="drawer-body">
           <span className={`status status-${selected.status.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replaceAll(" ", "-")}`}>{selected.status}</span>
           <h3>{selected.description}</h3>
-          <dl><div><dt>Tipo</dt><dd>{selected.type}</dd><small>{sourceFor(selected, "type")}</small></div><div><dt>Recebimento</dt><dd>{fmt(selected.receivedAt)}</dd><small>{sourceFor(selected, "receivedAt")}</small></div><div><dt>Prazo</dt><dd>{fmt(selected.dueAt)}</dd></div><div><dt>Envio</dt><dd>{fmt(selected.sentAt)}</dd><small>{sourceFor(selected, "sentAt")}</small></div><div><dt>Retorno</dt><dd>{fmt(selected.returnedAt)}</dd><small>{sourceFor(selected, "returnedAt")}</small></div><div><dt>Data da inspeção</dt><dd>{fmt(selected.inspectionDate)}</dd><small>{sourceFor(selected, "inspectionDate")}</small></div><div><dt>Status</dt><dd>{selected.status}</dd><small>{sourceFor(selected, "status")}</small></div><div><dt>Responsável da área inspecionada</dt><dd>{selected.responseOwner || "Não identificado"}</dd><small>{sourceFor(selected, "responseOwner")}</small></div><div><dt>Responsável fiscal pela inspeção</dt><dd>{selected.inspectionOwner || "Não identificado"}</dd><small>{sourceFor(selected, "inspectionOwner")}</small></div><div><dt>Contrato</dt><dd>{selected.contract || "Não identificado"}</dd><small>{sourceFor(selected, "contract")}</small></div>{selected.analysisOwner && <div><dt>Resp. pela análise</dt><dd>{selected.analysisOwner}</dd></div>}</dl>
+          <dl><div><dt>Tipo</dt><dd>{selected.type}</dd><small>{sourceFor(selected, "type")}</small></div><div><dt>Recebimento</dt><dd>{fmt(selected.receivedAt)}</dd><small>{sourceFor(selected, "receivedAt")}</small></div><div><dt>Prazo</dt><dd>{fmt(selected.dueAt)}</dd></div><div><dt>Envio</dt><dd>{fmt(selected.sentAt)}</dd><small>{sourceFor(selected, "sentAt")}</small></div><div><dt>Retorno</dt><dd>{fmt(selected.returnedAt)}</dd><small>{sourceFor(selected, "returnedAt")}</small></div><div><dt>Data da inspeção</dt><dd>{fmt(selected.inspectionDate)}</dd><small>{sourceFor(selected, "inspectionDate")}</small></div><div><dt>Status</dt><dd>{selected.status}</dd><small>{sourceFor(selected, "status")}</small></div><div><dt>Responsável da área inspecionada</dt><dd>{selected.responseOwner || "Não identificado"}</dd><small>{sourceFor(selected, "responseOwner")}</small></div><div><dt>Responsável fiscal pela inspeção</dt><dd>{selected.inspectionOwner || "Não identificado"}</dd><small>{sourceFor(selected, "inspectionOwner")}</small></div><div><dt>Contrato</dt><dd>{selected.contract || "Não identificado"}</dd><small>{sourceFor(selected, "contract")}</small></div><div><dt>Data de emissão da tratativa</dt><dd>{fmt(selected.issuedAt)}</dd><small>{sourceFor(selected, "issuedAt")}</small></div><div><dt>Local/frente de serviço</dt><dd>{selected.serviceLocation || "Não identificado"}</dd><small>{sourceFor(selected, "serviceLocation")}</small></div>{selected.analysisOwner && <div><dt>Resp. pela análise</dt><dd>{selected.analysisOwner}</dd></div>}</dl>
           {conflicts.some((item) => item.status === "open") && <section className="conflict"><strong>Informações divergentes encontradas</strong><p>Revise os dados candidatos e selecione manualmente o valor correto.</p>{conflicts.filter((item) => item.status === "open").map((item) => <small key={item.id}>{item.field}: {JSON.parse(item.candidateValues).join(" · ")}</small>)}</section>}
           <section className="notes"><h4>Observações internas</h4><p>{selected.notes || "Nenhuma observação registrada."}</p></section>
           <section className="timeline"><h4>Dossiê e histórico oficial de e-mails</h4>{emails.length ? emails.map((event) => <div className="timeline-item" key={`email-${event.id}`}><i /><div><strong>{event.eventType.replaceAll("_", " ")}</strong><p>{event.subject}</p><small>{fmt(event.occurredAt)} · {event.folderName || "Outlook"}</small><small>Vínculo {"★".repeat(event.associationConfidence || 0)}{"☆".repeat(5 - (event.associationConfidence || 0))}{event.conversationId ? " · Conversation ID confirmado" : ""}</small>

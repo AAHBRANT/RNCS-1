@@ -65,6 +65,30 @@ function valueFromLayoutColumn(
   return null;
 }
 
+function valueImmediatelyBelowAny(
+  tables: PdfTable[],
+  titles: string[],
+  options: { skipSignature?: boolean } = {},
+) {
+  for (const title of titles) {
+    const value = valueImmediatelyBelow(tables, title, options);
+    if (value) return value;
+  }
+  return null;
+}
+
+function valueFromLayoutColumnAny(
+  layoutText: string,
+  titles: string[],
+  options: { skipSignature?: boolean } = {},
+) {
+  for (const title of titles) {
+    const value = valueFromLayoutColumn(layoutText, title, options);
+    if (value) return value;
+  }
+  return null;
+}
+
 function extractRncNumber(text: string): {
   number: string | null;
   year: number | null;
@@ -120,8 +144,8 @@ function nextPersonName(lines: string[], start: number, stopLabels: RegExp[] = [
 
 function extractInspectionPeople(text: string) {
   const lines = normalizePdfText(text).split("\n").map((line) => line.trim()).filter(Boolean);
-  const areaSource = String.raw`RESPONS[ÁA]VEL\s+DA\s+[ÁA]REA\s+INSPECIONADA`;
-  const fiscalSource = String.raw`RESPONS[ÁA]VEL\s+FISCAL\s+PELA\s+INSPE[CÇ][ÃA]O`;
+  const areaSource = String.raw`RESPONS[ÁA]VEL\s+DA\s+[ÁA]REA(?:\s+INSPECIONADA)?`;
+  const fiscalSource = String.raw`RESPONS[ÁA]VEL\s+FISCAL(?:\s+PELA\s+INSPE[CÇ][ÃA]O)?`;
   const areaLabel = new RegExp(`^${areaSource}\\s*:?\\s*$`, "i");
   const fiscalLabel = new RegExp(`^${fiscalSource}\\s*:?\\s*$`, "i");
   const areaInline = new RegExp(`${areaSource}\\s*:?\\s*(.+?)(?=${fiscalSource}|$)`, "i");
@@ -171,7 +195,7 @@ function extractInspectionPeople(text: string) {
 
 function extractContract(text: string): { value: string | null; confidence: ExtractionConfidence } {
   const lines = normalizePdfText(text).split("\n").map((line) => line.trim()).filter(Boolean);
-  const index = lines.findIndex((line) => /^CONTRATO\s*:?\s*$/i.test(line));
+  const index = lines.findIndex((line) => /^(?:N[º°O.]?\s*(?:DO\s*)?)?CONTRATO\s*:?\s*$/i.test(line));
   if (index >= 0) {
     const value = lines[index + 1]?.trim().replace(/[|;]+.*$/, "").replace(/[.,:;-]+$/, "");
     if (value && value.length <= 100 && /\d/.test(value) && !/^RESPONS[ÁA]VEL/i.test(value)) {
@@ -276,6 +300,32 @@ function extractInspectionDate(tables: PdfTable[], layoutText: string, rawText: 
   return { value: `${year}-${month}-${day}`, confidence: "HIGH" };
 }
 
+function extractIssuedDate(tables: PdfTable[], layoutText: string, rawText: string): { value: string | null; confidence: ExtractionConfidence } {
+  const titles = ["DATA DE EMISSÃO DA TRATATIVA", "DATA DE EMISSÃO"];
+  const text = layoutText || rawText;
+  const dateStr = valueImmediatelyBelowAny(tables, titles) || valueFromLayoutColumnAny(text, titles);
+  let foundDate = dateStr;
+  if (!foundDate) {
+    const match = text.match(/DATA\s+DE\s+EMISS[ÃA]O(?:\s+DA\s+TRATATIVA)?\s*:?\s*\n\s*(\d{2}\/\d{2}\/\d{4})/i);
+    foundDate = match?.[1] ?? null;
+  }
+  if (!foundDate) return { value: null, confidence: "LOW" };
+  const dateMatch = foundDate.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  if (!dateMatch) return { value: null, confidence: "LOW" };
+  const [, day, month, year] = dateMatch;
+  return { value: `${year}-${month}-${day}`, confidence: "HIGH" };
+}
+
+function extractServiceLocation(tables: PdfTable[], layoutText: string, rawText: string): { value: string | null; confidence: ExtractionConfidence } {
+  const titles = ["LOCAL/FRENTE DE SERVIÇO", "LOCAL OU FRENTE DE SERVIÇO", "FRENTE DE SERVIÇO", "LOCAL"];
+  const text = layoutText || rawText;
+  const value = valueImmediatelyBelowAny(tables, titles) || valueFromLayoutColumnAny(text, titles);
+  if (value) return { value: value.trim(), confidence: "HIGH" };
+  const match = text.match(/(?:LOCAL\s*\/?\s*FRENTE\s+DE\s+SERVI[ÇC]O|FRENTE\s+DE\s+SERVI[ÇC]O|LOCAL)\s*:?\s*\n\s*([^\n\t]+)/i);
+  if (match?.[1]) return { value: match[1].trim(), confidence: "HIGH" };
+  return { value: null, confidence: "LOW" };
+}
+
 export function extractRncInformation(
   rawText: string,
   tables: PdfTable[] = [],
@@ -287,12 +337,12 @@ export function extractRncInformation(
   const analysisReviewer = extractAnalysisReviewer(rawText);
   const analysis = extractAnalysisStatus(rawText);
   const hasStructuredTables = tables.length > 0 || layoutText.split(/\r?\n/).some((line) => line.includes("\t"));
-  const structuredResponsible = valueImmediatelyBelow(tables, "RESPONSÁVEL DA ÁREA INSPECIONADA")
-    || valueFromLayoutColumn(layoutText, "RESPONSÁVEL DA ÁREA INSPECIONADA");
-  const structuredFiscal = valueImmediatelyBelow(tables, "RESPONSÁVEL FISCAL PELA INSPEÇÃO")
-    || valueFromLayoutColumn(layoutText, "RESPONSÁVEL FISCAL PELA INSPEÇÃO");
-  const structuredContract = valueImmediatelyBelow(tables, "CONTRATO")
-    || valueFromLayoutColumn(layoutText, "CONTRATO");
+  const structuredResponsible = valueImmediatelyBelowAny(tables, ["RESPONSÁVEL DA ÁREA INSPECIONADA", "RESPONSÁVEL DA ÁREA"])
+    || valueFromLayoutColumnAny(layoutText, ["RESPONSÁVEL DA ÁREA INSPECIONADA", "RESPONSÁVEL DA ÁREA"]);
+  const structuredFiscal = valueImmediatelyBelowAny(tables, ["RESPONSÁVEL FISCAL PELA INSPEÇÃO", "RESPONSÁVEL FISCAL"])
+    || valueFromLayoutColumnAny(layoutText, ["RESPONSÁVEL FISCAL PELA INSPEÇÃO", "RESPONSÁVEL FISCAL"]);
+  const structuredContract = valueImmediatelyBelowAny(tables, ["CONTRATO", "Nº DO CONTRATO", "NÚMERO DO CONTRATO"])
+    || valueFromLayoutColumnAny(layoutText, ["CONTRATO", "Nº DO CONTRATO", "NÚMERO DO CONTRATO"]);
   const structuredReviewer = valueImmediatelyBelow(
     tables, "REVISOR DA ELABORAÇÃO DO RNC", { skipSignature: true },
   ) || valueFromLayoutColumn(
@@ -311,6 +361,8 @@ export function extractRncInformation(
   const occurrenceType = extractOccurrenceType(tables, layoutText, rawText);
   const occurrenceDescription = extractOccurrenceDescription(tables, layoutText, rawText);
   const inspectionDate = extractInspectionDate(tables, layoutText, rawText);
+  const issuedDate = extractIssuedDate(tables, layoutText, rawText);
+  const serviceLocation = extractServiceLocation(tables, layoutText, rawText);
   return {
     rncNumber: rnc.number,
     year: rnc.year,
@@ -323,6 +375,8 @@ export function extractRncInformation(
     occurrenceType: occurrenceType.value,
     occurrenceDescription: occurrenceDescription.value,
     inspectionDate: inspectionDate.value,
+    issuedAt: issuedDate.value,
+    serviceLocation: serviceLocation.value,
     extractedText: normalizePdfText(rawText),
     extractionMethod: "PDF_TEXT",
     confidence: {
@@ -335,6 +389,8 @@ export function extractRncInformation(
       occurrenceType: occurrenceType.confidence,
       occurrenceDescription: occurrenceDescription.confidence,
       inspectionDate: inspectionDate.confidence,
+      issuedAt: issuedDate.confidence,
+      serviceLocation: serviceLocation.confidence,
     },
   };
 }

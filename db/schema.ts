@@ -20,6 +20,8 @@ export const rncs = pgTable("rncs", {
   sentAt: text("sent_at"),
   returnedAt: text("returned_at"),
   inspectionDate: text("inspection_date"),
+  issuedAt: text("issued_at"),
+  serviceLocation: text("service_location").notNull().default(""),
   status: text("status").notNull().default("Recebida"),
   notes: text("notes").notNull().default(""),
   responseOwner: text("response_owner").notNull().default(""),

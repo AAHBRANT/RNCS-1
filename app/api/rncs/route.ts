@@ -3,6 +3,7 @@ import { ensureDatabase, getDb } from "../../../db";
 import { auditLog, rncs, works } from "../../../db/schema";
 import { accessControlEnabled, canAccessType, canAccessWork, canEditRnc, forbidden, sessionFromRequest, unauthorized } from "../../../lib/access-control";
 import { enforceRateLimit } from "../../../lib/rate-limit";
+import { isValidRncType, RNC_TYPES } from "../../../lib/pdf/classify-type";
 
 const editableFields = [
   "workId", "number", "year", "description", "type", "receivedAt", "dueAt",
@@ -44,6 +45,8 @@ export async function GET(request: Request) {
         sentAt: rncs.sentAt,
         returnedAt: rncs.returnedAt,
         inspectionDate: rncs.inspectionDate,
+        issuedAt: rncs.issuedAt,
+        serviceLocation: rncs.serviceLocation,
         status: rncs.status,
         notes: rncs.notes,
         responseOwner: rncs.responseOwner,
@@ -93,13 +96,15 @@ export async function POST(request: Request) {
       return forbidden("Você não tem permissão para criar RNCs nesta obra.");
     }
     const outlookAudit = body.source === "outlook-browser-audit";
+    const requestedType = String(body.type || "");
+    const type = isValidRncType(requestedType) ? requestedType : "A classificar";
     const db = getDb();
     const [created] = await db.insert(rncs).values({
       workId,
       number,
       year: Number(body.year),
       description: String(body.description || "Descrição não identificada"),
-      type: String(body.type || "A classificar"),
+      type,
       receivedAt,
       dueAt: receivedAt ? addBusinessDays(receivedAt) : null,
       status: String(body.status || "Recebida"),
@@ -115,7 +120,7 @@ export async function POST(request: Request) {
         number: "Identificado no e-mail",
         year: "Identificado no e-mail",
         description: body.description ? "Identificado no nome do anexo" : "Não identificado",
-        type: body.type && body.type !== "A classificar" ? "Identificado no nome do anexo" : "Não identificado",
+        type: type !== "A classificar" ? "Identificado no nome do anexo" : "Não identificado",
         receivedAt: receivedAt ? "Identificado no e-mail recebido" : "Não identificado",
         sentAt: body.sentAt ? "Identificado nos Itens Enviados" : "Não identificado",
         returnedAt: body.returnedAt ? "Identificado no e-mail de análise" : "Não identificado",
@@ -183,6 +188,11 @@ export async function PATCH(request: Request) {
       let next: string | number | null = body[field] === "" ? null : body[field] as string | number | null;
       if (field === "year" || field === "workId") next = Number(next);
       if (field === "number") next = String(next).padStart(3, "0");
+      if (field === "type" && next !== null && !isValidRncType(String(next)) && String(next) !== "A classificar") {
+        return Response.json({
+          error: `Tipo inválido. Use um dos valores: ${RNC_TYPES.join(", ")} ou "A classificar".`,
+        }, { status: 400 });
+      }
       const previous = current[field];
       if (String(previous ?? "") !== String(next ?? "")) {
         changes[field] = next;

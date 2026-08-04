@@ -4,6 +4,7 @@ import {
   auditLog, emailEvents, outlookConnections, outlookSyncFolders, rncConflicts, rncs, syncRuns, works,
 } from "../db/schema";
 import { encryptToken, refreshAccessToken } from "./outlook-auth";
+import { classifyRncType } from "./pdf/classify-type";
 import { processRncAttachment } from "./pdf/process-rnc-attachment";
 import type { ProcessRncAttachmentResult } from "./pdf/types";
 import { analysisStatusFromEmailBody } from "./rnc-analysis";
@@ -121,18 +122,6 @@ export function explicitSentIdentities(subject: string, body: string, attachment
     }
   }
   return [...new Map(identities.map((identity) => [`${identity.number}/${identity.year}`, identity])).values()];
-}
-
-export function classifyType(text: string) {
-  const source = normalize(text);
-  if (/dds|trabalho em altura|andaime|banheiro quimico|seguranca|acidente|epi|risco/.test(source)) return "Segurança do Trabalho";
-  if (/arquibancada|infiltracao|revestimento|gesso|alvenaria|impermeabiliz|falha construtiva/.test(source)) return "Execução";
-  if (/ambient|residuo|poluic|licenca|betoneira|lata de tinta/.test(source)) return "Ambiental";
-  if (/oxidacao|fissura|adensamento|concretagem|qualidade|inspecao|ensaio/.test(source)) return "Qualidade";
-  if (/projeto|desenho|detalh/.test(source)) return "Projeto";
-  if (/sistema eletrico|execucao|servico|obra/.test(source)) return "Execução";
-  if (/document|registro|procedimento/.test(source)) return "Documental";
-  return "A classificar";
 }
 
 function descriptionFromAttachment(identity: Identity, names: string[]) {
@@ -496,14 +485,17 @@ async function processMessage(
     const analysisReviewers = [...new Set(pdfInformation.matchingFg14
       .map((information) => information.analysisReviewer)
       .filter((value): value is string => Boolean(value)))];
-    const occurrenceTypes = [...new Set(pdfInformation.matching
-      .map((information) => information.occurrenceType)
-      .filter((value): value is string => Boolean(value)))];
     const occurrenceDescriptions = [...new Set(pdfInformation.matching
       .map((information) => information.occurrenceDescription)
       .filter((value): value is string => Boolean(value)))];
     const inspectionDates = [...new Set(pdfInformation.matching
       .map((information) => information.inspectionDate)
+      .filter((value): value is string => Boolean(value)))];
+    const issuedDates = [...new Set(pdfInformation.matching
+      .map((information) => information.issuedAt)
+      .filter((value): value is string => Boolean(value)))];
+    const serviceLocations = [...new Set(pdfInformation.matching
+      .map((information) => information.serviceLocation)
       .filter((value): value is string => Boolean(value)))];
     if (rnc && pdfInformation.conflicts.length) {
       await recordConflict(rnc.id, "documentIdentity", [
@@ -513,15 +505,18 @@ async function processMessage(
     }
     if (!rnc) {
       const owner = owners.length === 1 ? owners[0] : "Não identificado";
+      const classifiedType = classifyRncType(`${description}\n${combined}`).type;
       [rnc] = await db.insert(rncs).values({
         workId: work.id, number: identity.number, year: identity.year,
         description: description || "Descrição não identificada",
-        type: classifyType(`${description}\n${combined}`), receivedAt: occurredDate,
+        type: classifiedType || "A classificar", receivedAt: occurredDate,
         dueAt: addBusinessDays(occurredDate), status: "Recebida", responseOwner: owner,
         inspectionOwner: inspectionOwners.length === 1 ? inspectionOwners[0] : "",
         contract: contracts.length === 1 ? contracts[0] : "",
         analysisOwner: analysisReviewers.length === 1 ? analysisReviewers[0] : "",
         inspectionDate: inspectionDates.length === 1 ? inspectionDates[0] : null,
+        issuedAt: issuedDates.length === 1 ? issuedDates[0] : null,
+        serviceLocation: serviceLocations.length === 1 ? serviceLocations[0] : "",
         fieldSources: JSON.stringify({
           workId: "Identificado no e-mail recebido", number: "Identificado no e-mail recebido",
           year: "Identificado no e-mail recebido", description: description ? "Identificado no documento" : "Não identificado",
@@ -531,6 +526,8 @@ async function processMessage(
           contract: contracts.length === 1 ? "Extraído do documento" : "Não identificado",
           analysisOwner: analysisReviewers.length === 1 ? "Extraído do documento da RNC" : "Não identificado",
           inspectionDate: inspectionDates.length === 1 ? "Extraído do documento" : "Não identificado",
+          issuedAt: issuedDates.length === 1 ? "Extraído do documento" : "Não identificado",
+          serviceLocation: serviceLocations.length === 1 ? "Extraído do documento" : "Não identificado",
         }),
         fieldConfidence: JSON.stringify({
           receivedAt: { score: 5, reason: "Data da mensagem oficial recebida da Supervisão." },
@@ -541,6 +538,8 @@ async function processMessage(
           contract: { score: contracts.length === 1 ? 5 : 1, reason: contracts.length === 1 ? "Contrato extraído do PDF original da RNC." : "Contrato não localizado." },
           analysisOwner: { score: analysisReviewers.length === 1 ? 5 : 1, reason: analysisReviewers.length === 1 ? "Revisor extraído do campo 'Revisor da Elaboração do RNC'." : "Revisor não localizado no documento." },
           inspectionDate: { score: inspectionDates.length === 1 ? 5 : 1, reason: inspectionDates.length === 1 ? "Data da inspeção extraída do campo 'DATA DA INSPEÇÃO'." : "Data da inspeção não localizada." },
+          issuedAt: { score: issuedDates.length === 1 ? 5 : 1, reason: issuedDates.length === 1 ? "Data de emissão da tratativa extraída do documento." : "Data de emissão não localizada." },
+          serviceLocation: { score: serviceLocations.length === 1 ? 5 : 1, reason: serviceLocations.length === 1 ? "Local/frente de serviço extraído do documento." : "Local/frente de serviço não localizado." },
         }),
         sourceSummary: `Mensagem oficial recebida em ${occurredAt}`,
       }).returning();
@@ -649,21 +648,22 @@ async function processMessage(
             reason: "Revisor da Elaboração do RNC não localizado na célula correspondente do FG 14.",
           };
         }
-        if (occurrenceTypes.length === 1) {
-          changes.type = occurrenceTypes[0];
-          sources.type = "Extraído do documento";
-          confidence.type = {
-            score: 5,
-            reason: "Tipo de ocorrência extraído do campo 'TIPO DE OCORRÊNCIA'.",
-          };
-        } else if (occurrenceTypes.length > 1) {
-          await recordConflict(rnc.id, "type", occurrenceTypes);
-        } else if (canAutoUpdate(rnc, "type")) {
-          sources.type = "Não identificado";
-          confidence.type = {
-            score: 1,
-            reason: "Tipo de ocorrência não localizado no campo correspondente.",
-          };
+        if (canAutoUpdate(rnc, "type")) {
+          const classified = classifyRncType(combined).type;
+          if (classified) {
+            changes.type = classified;
+            sources.type = "Classificado a partir do documento";
+            confidence.type = {
+              score: 5,
+              reason: "Tipo classificado com base no conteúdo completo do documento (título, descrição, caracterização e recomendações), nunca de uma palavra isolada.",
+            };
+          } else {
+            sources.type = "Não identificado";
+            confidence.type = {
+              score: 1,
+              reason: "Não foi possível classificar o tipo com confiança suficiente a partir do conteúdo do documento.",
+            };
+          }
         }
         if (occurrenceDescriptions.length === 1) {
           changes.description = occurrenceDescriptions[0];
@@ -695,6 +695,38 @@ async function processMessage(
           confidence.inspectionDate = {
             score: 1,
             reason: "Data da inspeção não localizada no campo correspondente.",
+          };
+        }
+        if (issuedDates.length === 1) {
+          changes.issuedAt = issuedDates[0];
+          sources.issuedAt = "Extraído do documento";
+          confidence.issuedAt = {
+            score: 5,
+            reason: "Data de emissão da tratativa extraída do campo 'DATA DE EMISSÃO'.",
+          };
+        } else if (issuedDates.length > 1) {
+          await recordConflict(rnc.id, "issuedAt", issuedDates);
+        } else if (canAutoUpdate(rnc, "issuedAt")) {
+          sources.issuedAt = "Não identificado";
+          confidence.issuedAt = {
+            score: 1,
+            reason: "Data de emissão da tratativa não localizada no campo correspondente.",
+          };
+        }
+        if (serviceLocations.length === 1) {
+          changes.serviceLocation = serviceLocations[0];
+          sources.serviceLocation = "Extraído do documento";
+          confidence.serviceLocation = {
+            score: 5,
+            reason: "Local/frente de serviço extraído do campo correspondente.",
+          };
+        } else if (serviceLocations.length > 1) {
+          await recordConflict(rnc.id, "serviceLocation", serviceLocations);
+        } else if (canAutoUpdate(rnc, "serviceLocation")) {
+          sources.serviceLocation = "Não identificado";
+          confidence.serviceLocation = {
+            score: 1,
+            reason: "Local/frente de serviço não localizado no campo correspondente.",
           };
         }
       } else if (eventType === "envio_resposta") {

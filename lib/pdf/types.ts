@@ -17,6 +17,8 @@ export interface ExtractedRncInformation {
   occurrenceType: string | null;
   occurrenceDescription: string | null;
   inspectionDate: string | null;
+  issuedAt: string | null;
+  serviceLocation: string | null;
   extractedText: string;
   extractionMethod: "PDF_TEXT" | "OCR" | "NONE";
   confidence: {
@@ -29,6 +31,8 @@ export interface ExtractedRncInformation {
     occurrenceType: ExtractionConfidence;
     occurrenceDescription: ExtractionConfidence;
     inspectionDate: ExtractionConfidence;
+    issuedAt: ExtractionConfidence;
+    serviceLocation: ExtractionConfidence;
   };
 }
 

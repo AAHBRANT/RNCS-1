@@ -3,7 +3,8 @@ import test from "node:test";
 import { extractRncInformation } from "../lib/pdf/extract-rnc-information";
 import { processRncAttachment } from "../lib/pdf/process-rnc-attachment";
 import { analysisStatusFromEmailBody } from "../lib/rnc-analysis";
-import { classifyType, explicitSentIdentities, extractIdentities, isGraphSearchStaleError } from "../lib/outlook-sync";
+import { explicitSentIdentities, extractIdentities, isGraphSearchStaleError } from "../lib/outlook-sync";
+import { classifyRncType } from "../lib/pdf/classify-type";
 
 test("identifica número e ano da RNC", () => {
   assert.deepEqual(
@@ -209,9 +210,31 @@ test("identifica todas as RNCs declaradas no corpo atual mesmo com anexos fora d
   ]);
 });
 
-test("classifica falhas construtivas como execução", () => {
-  assert.equal(classifyType("Não conformidades nas arquibancadas do campo de futebol"), "Execução");
-  assert.equal(classifyType("Presença de infiltração em revestimento de gesso"), "Execução");
+test("classifica não conformidades de engenharia pelo conteúdo completo do documento", () => {
+  assert.equal(
+    classifyRncType("Execução dos serviços de concretagem da estrutura apresentou não conformidade").type,
+    "Engenharia",
+  );
+  assert.equal(classifyRncType("Presença de infiltração em revestimento de gesso").type, "Engenharia");
+});
+
+test("classifica não conformidades de segurança do trabalho, ambiental e social", () => {
+  assert.equal(
+    classifyRncType("Colaborador identificado em trabalho em altura sem uso de EPI adequado").type,
+    "Segurança do Trabalho",
+  );
+  assert.equal(
+    classifyRncType("Descarte irregular de resíduos causando poluição do solo próximo à drenagem").type,
+    "Ambiental",
+  );
+  assert.equal(
+    classifyRncType("Reclamação da comunidade sobre impactos sociais do programa social de relocação").type,
+    "Social",
+  );
+});
+
+test("retorna null quando não há palavras-chave suficientes ou há empate entre categorias", () => {
+  assert.equal(classifyRncType("Documento sem nenhuma palavra-chave reconhecível").type, null);
 });
 
 test("reconhece cursor de pesquisa invalidado pelo Microsoft Graph", () => {
@@ -297,6 +320,71 @@ test("retorna LOW confidence quando os campos novos não existem", () => {
   assert.equal(information.confidence.occurrenceType, "LOW");
   assert.equal(information.confidence.occurrenceDescription, "LOW");
   assert.equal(information.confidence.inspectionDate, "LOW");
+});
+
+test("extrai a data de emissão da tratativa e o local/frente de serviço", () => {
+  const information = extractRncInformation([
+    "RNC 159/2026",
+    "DATA DE EMISSÃO DA TRATATIVA",
+    "05/04/2026",
+    "LOCAL/FRENTE DE SERVIÇO",
+    "Arquibancada Norte — Bloco 2",
+  ].join("\n"));
+  assert.equal(information.issuedAt, "2026-04-05");
+  assert.equal(information.serviceLocation, "Arquibancada Norte — Bloco 2");
+  assert.equal(information.confidence.issuedAt, "HIGH");
+  assert.equal(information.confidence.serviceLocation, "HIGH");
+});
+
+test("aceita variações de título: 'DATA DE EMISSÃO' e 'FRENTE DE SERVIÇO'", () => {
+  const information = extractRncInformation([
+    "RNC 159/2026",
+    "DATA DE EMISSÃO",
+    "10/05/2026",
+    "FRENTE DE SERVIÇO",
+    "Canteiro Central",
+  ].join("\n"));
+  assert.equal(information.issuedAt, "2026-05-10");
+  assert.equal(information.serviceLocation, "Canteiro Central");
+});
+
+test("extrai data de emissão e local de tabela estruturada", () => {
+  const information = extractRncInformation(
+    "Texto linear misturado",
+    [[
+      ["DATA DE EMISSÃO DA TRATATIVA", "LOCAL/FRENTE DE SERVIÇO"],
+      ["15/07/2026", "Fachada Leste"],
+    ]],
+  );
+  assert.equal(information.issuedAt, "2026-07-15");
+  assert.equal(information.serviceLocation, "Fachada Leste");
+});
+
+test("retorna null para data de emissão e local quando ausentes do documento", () => {
+  const information = extractRncInformation("RNC 159/2026 Documento sem os campos novos");
+  assert.equal(information.issuedAt, null);
+  assert.equal(information.serviceLocation, null);
+  assert.equal(information.confidence.issuedAt, "LOW");
+  assert.equal(information.confidence.serviceLocation, "LOW");
+});
+
+test("aceita a variação de título 'RESPONSÁVEL FISCAL' sem o complemento 'PELA INSPEÇÃO'", () => {
+  const information = extractRncInformation([
+    "RESPONSÁVEL FISCAL:",
+    "MARIANA LÍVIA DE MELO",
+  ].join("\n"));
+  assert.equal(information.inspectionResponsible, "MARIANA LÍVIA DE MELO");
+});
+
+test("aceita a variação de título 'Nº DO CONTRATO' em tabela estruturada", () => {
+  const information = extractRncInformation(
+    "Texto lateral",
+    [[
+      ["Nº DO CONTRATO"],
+      ["CT 02.023/2024 – UEP/SEGGOV"],
+    ]],
+  );
+  assert.equal(information.contract, "CT 02.023/2024 – UEP/SEGGOV");
 });
 
 test("detecta resposta enviada via CC na caixa de entrada", () => {

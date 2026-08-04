@@ -1,6 +1,26 @@
 import { extractPdfText } from "./extract-pdf-text";
 import { extractRncInformation } from "./extract-rnc-information";
-import type { ProcessRncAttachmentResult } from "./types";
+import type { ExtractedRncInformation, ProcessRncAttachmentResult } from "./types";
+
+const DIAGNOSTIC_FIELDS = [
+  "rncNumber", "responsible", "inspectionResponsible", "contract",
+  "analysisReviewer", "occurrenceType", "occurrenceDescription", "inspectionDate",
+  "issuedAt", "serviceLocation",
+] as const;
+
+function logExtractionDiagnostics(fileName: string, information: ExtractedRncInformation) {
+  const notIdentified: string[] = [];
+  const identified: Array<{ field: string; confidence: string }> = [];
+  for (const field of DIAGNOSTIC_FIELDS) {
+    const value = information[field];
+    const confidence = information.confidence[field];
+    if (value === null || value === "") notIdentified.push(field);
+    else identified.push({ field, confidence });
+  }
+  console.log(
+    `[extração PDF] arquivo="${fileName}" identificados=${JSON.stringify(identified)} naoIdentificados=${JSON.stringify(notIdentified)}`,
+  );
+}
 
 export async function processRncAttachment(params: {
   fileName: string;
@@ -24,10 +44,12 @@ export async function processRncAttachment(params: {
         error: "PDF sem texto pesquisável — leitura OCR necessária.",
       };
     }
+    const information = extractRncInformation(extraction.text, extraction.tables, extraction.layoutText);
+    logExtractionDiagnostics(params.fileName, information);
     return {
       success: true, needsOcr: false, fileName: params.fileName,
       pageCount: extraction.pageCount,
-      information: extractRncInformation(extraction.text, extraction.tables, extraction.layoutText), error: null,
+      information, error: null,
     };
   } catch (error) {
     return {
