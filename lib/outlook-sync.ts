@@ -100,6 +100,24 @@ export function extractIdentities(subject: string, attachmentNames: string[], bo
   return [...found.values()];
 }
 
+/**
+ * Nomes de anexo como "FG 13 - TRATATIVA DE RNC 171.pdf" citam a RNC pelo
+ * número mas nunca trazem o ano — nem no arquivo, nem no assunto. Quando isso
+ * acontece em TODOS os anexos de uma mensagem (nenhum outro anexo confirma um
+ * ano pra herdar), extractIdentities não tem como formar a identidade sozinha.
+ * Essa função devolve só os números citados, pra processMessage resolver o
+ * ano consultando o banco (RNC já existente com esse número na obra).
+ */
+export function extractBareRncNumbers(attachmentNames: string[]) {
+  const numbers = new Set<string>();
+  for (const name of attachmentNames) {
+    for (const match of name.matchAll(/(?<![a-zA-Z0-9])RNCs?\s*(?:N[º°o.]?\s*)?[-–—_/:]?\s*(\d{1,6})(?![a-zA-Z0-9])/gi)) {
+      numbers.add(match[1].padStart(3, "0"));
+    }
+  }
+  return [...numbers];
+}
+
 export function identityIsStrong(identity: Identity, subject: string, attachmentNames: string[]) {
   const withYear = new RegExp(`${Number(identity.number)}\\s*[\\/_-]\\s*${identity.year}`, "i");
   // Alguns anexos citam "RNC NNN" sem o ano junto (ex.: "FG 13 - TRATATIVA DE
@@ -530,6 +548,11 @@ async function processMessage(
     identities = [...new Map(identities.map((identity) => [`${identity.number}/${identity.year}`, identity])).values()];
   }
   const db = getDb();
+  const [work] = await db.select().from(works).where(eq(works.name, workName)).limit(1);
+  if (!work) {
+    logMessageDiagnostic(message, sender, `obra "${workName}" não encontrada no banco`, { pasta: folder.path });
+    return stats;
+  }
   if (officialSent && explicitSentTargets.length) {
     const validKeys = new Set(explicitSentTargets.map((identity) => `${identity.number}/${identity.year}`));
     const previousLinks = await db.select().from(emailEvents)
@@ -543,16 +566,30 @@ async function processMessage(
     }
   }
   if (target) identities = identities.filter((item) => item.number === target.number && item.year === target.year);
+  if (officialSent || forwardedResponse) {
+    // Último recurso: anexo cita "RNC NNN" sem ano em lugar nenhum da mensagem
+    // (nem no arquivo, nem no assunto, nem em outro anexo pra herdar). Só faz
+    // sentido pra uma RESPOSTA (nunca para "recebimento" — criar uma RNC nova
+    // exige um ano real do documento, nunca inferido) — resolve consultando
+    // se já existe uma única RNC com esse número cadastrada na obra.
+    const bareNumbers = extractBareRncNumbers(attachmentNames)
+      .filter((number) => !identities.some((identity) => identity.number === number));
+    for (const number of bareNumbers) {
+      const matches = await db.select({ year: rncs.year }).from(rncs)
+        .where(and(eq(rncs.workId, work.id), eq(rncs.number, number)));
+      if (matches.length === 1) {
+        identities.push({ number, year: matches[0].year });
+      } else if (matches.length > 1) {
+        logMessageDiagnostic(message, sender, `RNC ${number} citada sem ano no anexo, e existe mais de um ano cadastrado pra esse número na obra — ambíguo, ignorada`, {
+          pasta: folder.path, anosEncontrados: matches.map((item) => item.year),
+        });
+      }
+    }
+  }
   if (!identities.length) {
     logMessageDiagnostic(message, sender, "nenhuma identidade de RNC (número/ano) encontrada no assunto, corpo ou nomes de anexo", {
       pasta: folder.path, anexos: attachmentNames,
     });
-    return stats;
-  }
-
-  const [work] = await db.select().from(works).where(eq(works.name, workName)).limit(1);
-  if (!work) {
-    logMessageDiagnostic(message, sender, `obra "${workName}" não encontrada no banco`, { pasta: folder.path });
     return stats;
   }
   const occurredAt = message.sentDateTime || message.receivedDateTime || new Date().toISOString();

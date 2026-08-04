@@ -3,7 +3,7 @@ import test from "node:test";
 import { extractRncInformation } from "../lib/pdf/extract-rnc-information";
 import { processRncAttachment } from "../lib/pdf/process-rnc-attachment";
 import { analysisStatusFromEmailBody } from "../lib/rnc-analysis";
-import { classifyMessageKind, explicitSentIdentities, extractIdentities, identityIsStrong } from "../lib/outlook-sync";
+import { classifyMessageKind, explicitSentIdentities, extractBareRncNumbers, extractIdentities, identityIsStrong } from "../lib/outlook-sync";
 import { classifyRncType } from "../lib/pdf/classify-type";
 
 test("identifica número e ano da RNC", () => {
@@ -273,6 +273,17 @@ test("não infere ano de anexo sem ano quando os demais anexos da mensagem disco
   ];
   const result = extractIdentities("", attachmentNames, "");
   assert.equal(result.some((identity) => identity.number === "161"), false);
+});
+
+test("extrai números de RNC citados sem ano em lugar nenhum do anexo", () => {
+  // Caso real: e-mail do Pedro com 3 anexos, nenhum deles com ano no nome nem
+  // no assunto — extractIdentities sozinha não forma identidade nenhuma;
+  // processMessage resolve o ano consultando o banco por número (ver commit).
+  const attachmentNames = [
+    "FG 13 - TRATATIVA DE RNC 171.pdf", "FG 13 - TRATATIVA DE RNC 172.pdf", "FG 13 - TRATATIVA DE RNC 173.pdf",
+  ];
+  assert.deepEqual(extractIdentities("", attachmentNames, ""), []);
+  assert.deepEqual(extractBareRncNumbers(attachmentNames), ["171", "172", "173"]);
 });
 
 test("rejeita anexo com apenas número-ano (sem RNC)", () => {
