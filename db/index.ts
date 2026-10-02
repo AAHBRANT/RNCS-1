@@ -327,6 +327,12 @@ async function initializeDatabaseOnce() {
     value TEXT NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`;
+  await sql`CREATE TABLE IF NOT EXISTS rnc_comments (
+    rnc_id INTEGER PRIMARY KEY REFERENCES rncs(id),
+    comment TEXT NOT NULL DEFAULT '',
+    updated_by TEXT NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`;
   await sql`CREATE TABLE IF NOT EXISTS access_users (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,

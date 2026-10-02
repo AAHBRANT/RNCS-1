@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
-  BarChart3, Bell, CalendarDays, ClipboardList, Download, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Reply, Tag,
+  BarChart3, Bell, XCircle, CalendarDays, ClipboardList, Download, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Reply, Tag,
 } from "lucide-react";
 
 export type SidebarProps = {
@@ -49,6 +49,9 @@ export function Sidebar({
           </a>
           <a href="/planner" className={isActive("/planner") ? "active" : ""} title="Calendário / Planner">
             <span className="icon"><CalendarDays size={14} /></span>{!collapsed && <span className="label">Calendário / Planner</span>}
+          </a>
+          <a href="/reprovadas" className={isActive("/reprovadas") ? "active" : ""} title="RNCs Reprovadas">
+            <span className="icon"><XCircle size={14} /></span>{!collapsed && <span className="label">Reprovadas</span>}
           </a>
           <a href="/relatorio" className={isActive("/relatorio") ? "active" : ""} title="Relatório">
             <span className="icon"><BarChart3 size={14} /></span>{!collapsed && <span className="label">Relatório</span>}

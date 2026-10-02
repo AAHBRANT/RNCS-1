@@ -492,3 +492,22 @@ body.sidebar-collapsed .app-shell { grid-template-columns:64px 1fr; }
 .pl-identified footer { display:flex; gap:8px; margin-top:12px; }
 .pl-identified-note { margin:10px 0 0; color:var(--muted); font-size:10px; }
 @media (max-width:900px) { .pl-day { min-height:84px; } .pl-facts { grid-template-columns:1fr; } .pl-identified li { grid-template-columns:1fr; } .pl-identified-date { text-align:left; } }
+
+/* Página RNCs Reprovadas */
+.rj-table td { padding:14px 10px; }
+.rj-table td:nth-child(1) { min-width:110px; white-space:nowrap; }
+.rj-table td:nth-child(1) small { display:block; margin-top:4px; color:#66736c; font-size:10px; white-space:normal; }
+.rj-table td:nth-child(2) { min-width:200px; max-width:260px; }
+.rj-table td:nth-child(3) { min-width:320px; max-width:460px; }
+.rj-table td:nth-child(4) { min-width:280px; width:30%; }
+.rj-reason p { margin:0; line-height:1.5; white-space:pre-line; }
+.rj-reason p.clamped { display:-webkit-box; -webkit-line-clamp:6; -webkit-box-orient:vertical; overflow:hidden; }
+.rj-reason small { display:block; margin-top:6px; color:#66736c; font-size:10px; }
+.rj-more { margin-top:4px; padding:0; border:0; background:none; color:#670000; font-size:11px; font-weight:700; cursor:pointer; }
+.rj-comment textarea { width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:8px; font:inherit; font-size:12px; resize:vertical; background:#fffef7; }
+.rj-comment textarea:focus { outline:2px solid #67000033; border-color:#670000; }
+.rj-comment > div { display:flex; align-items:center; gap:10px; margin-top:6px; }
+.rj-comment small { color:#66736c; font-size:10px; }
+.rj-error { color:#a30000 !important; }
+.rj-search { display:flex; align-items:center; gap:6px; padding:0 10px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+.rj-search input { border:0; outline:0; padding:8px 0; font:inherit; font-size:12px; min-width:200px; background:transparent; }

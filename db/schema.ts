@@ -274,3 +274,10 @@ export const plannerSettings = pgTable("planner_settings", {
   value: text("value").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 });
+
+export const rncComments = pgTable("rnc_comments", {
+  rncId: integer("rnc_id").primaryKey().references(() => rncs.id),
+  comment: text("comment").notNull().default(""),
+  updatedBy: text("updated_by").notNull().default(""),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+});
