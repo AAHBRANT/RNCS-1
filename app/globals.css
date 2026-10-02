@@ -514,3 +514,18 @@ body.sidebar-collapsed .app-shell { grid-template-columns:64px 1fr; }
 .rj-table td.rj-view { width:56px; text-align:center; vertical-align:middle; }
 .rj-eye { display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:50%; border:1px solid var(--line); color:#670000; background:#fff; }
 .rj-eye:hover { background:#670000; color:#fff; border-color:#670000; }
+
+/* Reprovadas: colunas e filtros por coluna */
+.rj-table { table-layout:fixed; min-width:980px; }
+.rj-table .rj-c-rnc { width:96px; }
+.rj-table .rj-c-desc { width:17%; }
+.rj-table .rj-c-reason { width:auto; }
+.rj-table .rj-c-comment { width:21%; }
+.rj-table .rj-c-view { width:52px; }
+.rj-table td:nth-child(n) { min-width:0; max-width:none; width:auto; }
+.rj-table td { word-break:break-word; }
+.rj-table td:nth-child(1) { white-space:normal; }
+.rj-table td:nth-child(5), .rj-table th:nth-child(5) { padding-left:4px; padding-right:4px; text-align:center; }
+.rj-filter-row th { padding:6px 6px 8px; background:#fbfcfb; text-transform:none; letter-spacing:0; }
+.rj-filter-row input { width:100%; box-sizing:border-box; padding:6px 8px; border:1px solid var(--line); border-radius:6px; font:inherit; font-size:11px; font-weight:400; background:#fff; color:inherit; }
+.rj-filter-row input:focus { outline:2px solid #67000033; border-color:#670000; }

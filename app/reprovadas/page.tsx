@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Eye, RefreshCw, Search } from "lucide-react";
+import { Eye, FilterX, RefreshCw } from "lucide-react";
 import { Sidebar } from "../components/sidebar";
 import { Topbar } from "../components/topbar";
 import { useSidebarCollapse } from "../../lib/use-sidebar-collapse";
@@ -13,6 +13,10 @@ type Row = {
   reason: { text: string; source: string; document: { eventId: number; attachmentId: string; name: string } | null }; comment: string; commentBy: string; commentAt: string | null;
 };
 type Saved = Pick<Row, "comment" | "commentBy" | "commentAt">;
+type Filters = { rnc: string; description: string; reason: string; comment: string };
+const EMPTY_FILTERS: Filters = { rnc: "", description: "", reason: "", comment: "" };
+
+const norm = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
 const formatDateTime = (value: string | null) => (value ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "");
 
@@ -66,7 +70,7 @@ export default function ReprovadasPage() {
   const [outlook, setOutlook] = useState({ configured: false, connected: false });
   const [works, setWorks] = useState<WorkOption[]>([]);
   const [activeWorkId, setActiveWorkId] = useState<number | null>(null);
-  const [query, setQuery] = useState("");
+  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -102,10 +106,17 @@ export default function ReprovadasPage() {
   }
 
   const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return rows;
-    return rows.filter((row) => `${row.number}/${row.year} ${row.description} ${row.reason.text} ${row.comment}`.toLowerCase().includes(needle));
-  }, [rows, query]);
+    const needle = {
+      rnc: norm(filters.rnc.trim()), description: norm(filters.description.trim()),
+      reason: norm(filters.reason.trim()), comment: norm(filters.comment.trim()),
+    };
+    return rows.filter((row) =>
+      (!needle.rnc || norm(`${row.number}/${row.year} ${row.workName}`).includes(needle.rnc))
+      && (!needle.description || norm(row.description).includes(needle.description))
+      && (!needle.reason || norm(row.reason.text).includes(needle.reason))
+      && (!needle.comment || norm(row.comment).includes(needle.comment)));
+  }, [rows, filters]);
+  const filtering = Object.values(filters).some((value) => value.trim());
 
   function saved(id: number, patch: Saved) {
     setRows((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)));
@@ -125,9 +136,7 @@ export default function ReprovadasPage() {
             <p>{loading ? "Carregando…" : `${rows.length} ${rows.length === 1 ? "RNC reprovada" : "RNCs reprovadas"}. O motivo vem da análise da Supervisão (FG 14).`}</p>
           </div>
           <div className="rp-actions">
-            <label>Buscar
-              <span className="rj-search"><Search size={13} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Número, descrição ou motivo" /></span>
-            </label>
+            {filtering && <button type="button" className="button secondary" onClick={() => setFilters(EMPTY_FILTERS)}><FilterX size={14} /> Limpar filtros</button>}
             <button type="button" className="button secondary" onClick={() => void load()} disabled={loading}><RefreshCw size={14} /> {loading ? "Atualizando…" : "Atualizar"}</button>
           </div>
         </section>
@@ -136,7 +145,18 @@ export default function ReprovadasPage() {
           <div className="rp-panel">
             <div className="rp-table-wrap">
               <table className="rp-table rj-table">
-                <thead><tr><th>RNC</th><th>Descrição</th><th>Motivo da reprovação</th><th>Comentários</th><th>FG 14</th></tr></thead>
+                <colgroup><col className="rj-c-rnc" /><col className="rj-c-desc" /><col className="rj-c-reason" /><col className="rj-c-comment" /><col className="rj-c-view" /></colgroup>
+                <thead>
+                  <tr><th>RNC</th><th>Descrição</th><th>Motivo da reprovação</th><th>Comentários</th><th title="Abrir o FG 14">FG 14</th></tr>
+                  <tr className="rj-filter-row">
+                    {(["rnc", "description", "reason", "comment"] as const).map((key) => (
+                      <th key={key}>
+                        <input value={filters[key]} onChange={(event) => setFilters({ ...filters, [key]: event.target.value })} placeholder="Filtrar…" aria-label={`Filtrar por ${key === "rnc" ? "RNC" : key === "description" ? "descrição" : key === "reason" ? "motivo" : "comentários"}`} />
+                      </th>
+                    ))}
+                    <th />
+                  </tr>
+                </thead>
                 <tbody>
                   {filtered.map((row) => (
                     <tr key={row.id}>
@@ -153,7 +173,7 @@ export default function ReprovadasPage() {
                   ))}
                 </tbody>
               </table>
-              {!filtered.length && <p className="rp-empty">{loading ? "Carregando dados…" : "Nenhuma RNC reprovada encontrada."}</p>}
+              {!filtered.length && <p className="rp-empty">{loading ? "Carregando dados…" : filtering ? "Nenhuma RNC corresponde aos filtros." : "Nenhuma RNC reprovada encontrada."}</p>}
             </div>
           </div>
         </section>
