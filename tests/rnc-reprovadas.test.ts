@@ -25,11 +25,12 @@ test("extrai o texto do campo de informações complementares do FG 14", () => {
 
 test("usa o FG 14 da própria RNC quando o e-mail traz vários", () => {
   const events = [{
+    id: 7,
     occurredAt: "2026-08-26T12:00:00Z",
     summary: "corpo",
     attachmentMetadata: JSON.stringify([
-      { name: "FG 14 - ANÁLISE DE TRATATIVA DE RNC 143_2026.pdf", extractedText: FG14.replace("241/2026", "143/2026").replace("As medidas", "OUTRA") },
-      { name: "FG 14 - ANÁLISE DE TRATATIVA DE RNC 241_2026.pdf", extractedText: FG14 },
+      { id: "a1", name: "FG 14 - ANÁLISE DE TRATATIVA DE RNC 143_2026.pdf", extractedText: FG14.replace("241/2026", "143/2026").replace("As medidas", "OUTRA") },
+      { id: "a1", name: "FG 14 - ANÁLISE DE TRATATIVA DE RNC 241_2026.pdf", extractedText: FG14 },
     ]),
   }];
   const result = rejectionReason({ number: "241", year: 2026 }, events);
@@ -37,9 +38,15 @@ test("usa o FG 14 da própria RNC quando o e-mail traz vários", () => {
   assert.match(result.text, /^As medidas/);
 });
 
-test("sem FG 14, cai para o corpo do e-mail e depois para 'não localizado'", () => {
-  const email = rejectionReason({ number: "1", year: 2026 }, [{ occurredAt: "2026-01-01T00:00:00Z", summary: "Prezados, Constatou-se que a tratativa não foi satisfatória.", attachmentMetadata: null }]);
-  assert.equal(email.source, "E-mail");
-  assert.match(email.text, /^Constatou-se/);
+test("nome de arquivo com underscores (FG_14_-_...) também é reconhecido", () => {
+  const events = [{ id: 1, occurredAt: "2026-08-24T12:00:00Z", summary: "corpo", attachmentMetadata: JSON.stringify([{ id: "a1", name: "FG_14_-_ANÁLISE_DE_TRATATIVA_DE_RNC_292_2026_-_X.pdf", extractedText: FG14.replace("241/2026", "292/2026") }]) }];
+  assert.equal(rejectionReason({ number: "292", year: 2026 }, events).source, "FG 14");
+});
+
+test("nunca usa o corpo do e-mail; FG 14 sem texto vira aviso", () => {
+  const scanned = rejectionReason({ number: "95", year: 2026 }, [{ id: 1, occurredAt: "2026-05-22T00:00:00Z", summary: "Prezados, Constatou-se...", attachmentMetadata: JSON.stringify([{ id: "a1", name: "FG 14 - ANÁLISE DE TRATATIVA DE RNC 095_2026.pdf", extractedText: "" }]) }]);
+  assert.equal(scanned.source, "Não localizado");
+  assert.match(scanned.text, /imagem/);
+  assert.equal(scanned.document?.attachmentId, "a1");
   assert.equal(rejectionReason({ number: "1", year: 2026 }, []).source, "Não localizado");
 });

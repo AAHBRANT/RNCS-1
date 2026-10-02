@@ -19,7 +19,7 @@ export async function GET(request: Request) {
 
     const ids = rows.map((rnc) => rnc.id);
     const events = ids.length
-      ? await db.select({ rncId: emailEvents.rncId, occurredAt: emailEvents.occurredAt, summary: emailEvents.summary, attachmentMetadata: emailEvents.attachmentMetadata })
+      ? await db.select({ id: emailEvents.id, rncId: emailEvents.rncId, occurredAt: emailEvents.occurredAt, summary: emailEvents.summary, attachmentMetadata: emailEvents.attachmentMetadata })
         .from(emailEvents).where(and(inArray(emailEvents.rncId, ids), eq(emailEvents.eventType, "retorno_supervisao")))
       : [];
     const comments = ids.length ? await db.select().from(rncComments).where(inArray(rncComments.rncId, ids)) : [];

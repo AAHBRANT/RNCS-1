@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, Search } from "lucide-react";
+import { Eye, RefreshCw, Search } from "lucide-react";
 import { Sidebar } from "../components/sidebar";
 import { Topbar } from "../components/topbar";
 import { useSidebarCollapse } from "../../lib/use-sidebar-collapse";
@@ -10,7 +10,7 @@ type AccessUser = { name: string; email: string; role: "admin" | "drafter" | "re
 type WorkOption = { id: number; name: string; accessible: boolean };
 type Row = {
   id: number; number: string; year: number; description: string; type: string; workName: string; status: string;
-  reason: { text: string; source: string }; comment: string; commentBy: string; commentAt: string | null;
+  reason: { text: string; source: string; document: { eventId: number; attachmentId: string; name: string } | null }; comment: string; commentBy: string; commentAt: string | null;
 };
 type Saved = Pick<Row, "comment" | "commentBy" | "commentAt">;
 
@@ -136,7 +136,7 @@ export default function ReprovadasPage() {
           <div className="rp-panel">
             <div className="rp-table-wrap">
               <table className="rp-table rj-table">
-                <thead><tr><th>RNC</th><th>Descrição</th><th>Motivo da reprovação</th><th>Comentários</th></tr></thead>
+                <thead><tr><th>RNC</th><th>Descrição</th><th>Motivo da reprovação</th><th>Comentários</th><th>FG 14</th></tr></thead>
                 <tbody>
                   {filtered.map((row) => (
                     <tr key={row.id}>
@@ -144,6 +144,11 @@ export default function ReprovadasPage() {
                       <td>{row.description}</td>
                       <td><ReasonCell reason={row.reason} /></td>
                       <td><CommentCell row={row} onSaved={saved} /></td>
+                      <td className="rj-view">
+                        {row.reason.document ? (
+                          <a className="rj-eye" href={`/api/rncs/${row.id}/dossier-attachment?eventId=${row.reason.document.eventId}&attachmentId=${encodeURIComponent(row.reason.document.attachmentId)}`} target="_blank" rel="noopener noreferrer" title={`Abrir ${row.reason.document.name}`} aria-label={`Abrir o FG 14 da RNC ${row.number}/${row.year}`}><Eye size={16} /></a>
+                        ) : <span title="FG 14 não localizado">—</span>}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

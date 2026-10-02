@@ -1,16 +1,17 @@
 // Motivo da reprovação: texto do campo "INFORMAÇÕES COMPLEMENTARES DA VERIFICAÇÃO DA RNC" do FG 14
-// (Análise de Tratativa) enviado pela Supervisão. Se não houver FG 14 legível, cai para o corpo do e-mail.
+// (Análise de Tratativa) enviado pela Supervisão. O corpo do e-mail não é usado: ele é igual para todas as RNCs.
 
-export type ReasonEvent = { occurredAt: string; summary: string | null; attachmentMetadata: string | null };
+export type ReasonEvent = { id: number; occurredAt: string; summary: string | null; attachmentMetadata: string | null };
 export type ReasonRnc = { number: string; year: number };
-export type RejectionReason = { text: string; source: "FG 14" | "E-mail" | "Não localizado" };
+export type RejectionDocument = { eventId: number; attachmentId: string; name: string };
+export type RejectionReason = { text: string; source: "FG 14" | "Não localizado"; document: RejectionDocument | null };
 
 const FOLD: Record<string, string> = {
   á: "a", à: "a", â: "a", ã: "a", é: "e", ê: "e", í: "i", ó: "o", ô: "o", õ: "o", ú: "u", ç: "c",
 };
 const fold = (value: string) => value.toLowerCase().replace(/[áàâãéêíóôõúç]/g, (char) => FOLD[char]);
 
-type Attachment = { name?: string; extractedText?: string };
+type Attachment = { id?: string; name?: string; extractedText?: string };
 
 function attachmentsOf(event: ReasonEvent): Attachment[] {
   try {
@@ -21,7 +22,7 @@ function attachmentsOf(event: ReasonEvent): Attachment[] {
   }
 }
 
-const isFg14 = (attachment: Attachment) => /fg\s*-?\s*14/i.test(attachment.name || "") && Boolean(attachment.extractedText?.trim());
+const isFg14Name = (attachment: Attachment) => /fg[\s_-]*14/i.test(attachment.name || "");
 
 function mentionsRnc(attachment: Attachment, rnc: ReasonRnc) {
   const target = parseInt(rnc.number, 10);
@@ -59,19 +60,17 @@ export function extractFg14Reason(rawText: string): string {
 
 export function rejectionReason(rnc: ReasonRnc, events: ReasonEvent[]): RejectionReason {
   const ordered = [...events].sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1)); // mais recente primeiro
+  let document: RejectionDocument | null = null;
   for (const event of ordered) {
-    const fg14 = attachmentsOf(event).filter(isFg14);
+    const fg14 = attachmentsOf(event).filter((attachment) => isFg14Name(attachment) && attachment.id);
     const own = fg14.find((attachment) => mentionsRnc(attachment, rnc)) ?? (fg14.length === 1 ? fg14[0] : undefined);
     if (!own) continue;
-    const text = extractFg14Reason(own.extractedText!);
-    if (text) return { text, source: "FG 14" };
+    document ??= { eventId: event.id, attachmentId: own.id!, name: own.name || "FG 14.pdf" };
+    const text = own.extractedText?.trim() ? extractFg14Reason(own.extractedText) : "";
+    if (text) return { text, source: "FG 14", document: { eventId: event.id, attachmentId: own.id!, name: own.name || "FG 14.pdf" } };
   }
-  const withSummary = ordered.find((event) => event.summary?.trim());
-  if (withSummary) {
-    const summary = withSummary.summary!.replace(/&quot;/g, '"').replace(/\s+/g, " ").trim();
-    // Corpo padrão do e-mail: a parte útil começa em "Constatou-se"/"Após verificação".
-    const useful = /(?:Após verificação|Constatou-se).*/i.exec(summary)?.[0] ?? summary;
-    return { text: useful, source: "E-mail" };
+  if (document) {
+    return { text: "O FG 14 desta RNC é uma imagem (sem texto que o sistema consiga ler). Use o botão de visualizar para abrir o documento.", source: "Não localizado", document };
   }
-  return { text: "Motivo não localizado nos documentos da Supervisão.", source: "Não localizado" };
+  return { text: "FG 14 não localizado nos e-mails da Supervisão.", source: "Não localizado", document: null };
 }
