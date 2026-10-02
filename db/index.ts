@@ -272,6 +272,14 @@ async function initializeDatabaseOnce() {
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`;
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS planner_pams_version_unique ON planner_pams(response_version_id)`;
+  // PAMs enviados como anexo de e-mail (FG 06 feito fora do sistema): sem versão de resposta associada.
+  await sql`ALTER TABLE planner_pams ALTER COLUMN response_version_id DROP NOT NULL`;
+  await sql`ALTER TABLE planner_pams ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'SISTEMA'`;
+  await sql`ALTER TABLE planner_pams ADD COLUMN IF NOT EXISTS email_event_id INTEGER`;
+  await sql`ALTER TABLE planner_pams ADD COLUMN IF NOT EXISTS attachment_id TEXT`;
+  await sql`ALTER TABLE planner_pams ADD COLUMN IF NOT EXISTS attachment_name TEXT`;
+  await sql`ALTER TABLE planner_pams ADD COLUMN IF NOT EXISTS document_date TEXT`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS planner_pams_email_unique ON planner_pams(email_event_id, attachment_name)`;
   await sql`CREATE INDEX IF NOT EXISTS planner_pams_rnc_idx ON planner_pams(rnc_id)`;
   await sql`CREATE TABLE IF NOT EXISTS planner_commitments (
     id SERIAL PRIMARY KEY,

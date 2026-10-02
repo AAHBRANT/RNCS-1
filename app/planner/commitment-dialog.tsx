@@ -72,7 +72,7 @@ export function CommitmentDialog({ item, siblings, today, canAdjust, busy, onClo
 
         <dl className="pl-facts">
           <div><dt>RNC</dt><dd>{rncName}{item.rnc ? ` · ${item.rnc.workName}` : ""}</dd></div>
-          <div><dt>Origem</dt><dd>PAM V{item.pamVersion} · {item.pam ? pamSentText(item.pam) : "—"}</dd></div>
+          <div><dt>Origem</dt><dd>PAM V{item.pamVersion}{item.pam?.source === "EMAIL" ? " (FG 06 anexado ao e-mail)" : ""} · {item.pam ? pamSentText(item.pam) : "—"}</dd></div>
           <div><dt>Ação</dt><dd>{item.kind === "FINAL" ? "Prazo final do PAM — " : "Etapa — "}{item.title}</dd></div>
           <div><dt>Regra original</dt><dd>{describeRule(item, siblings)}</dd></div>
           {predecessor && <div><dt>Depende de</dt><dd>{predecessor.title}</dd></div>}

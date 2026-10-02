@@ -41,7 +41,7 @@ export function IdentifiedDeadlines({ rncLabel, pam, items, canAdjust, busy, onC
       <header>
         <div>
           <h3>Prazos identificados — {rncLabel}</h3>
-          <p>PAM V{pam.pamVersion} · {pamSentText(pam)}{pam.status === "SUBSTITUIDO" ? " · substituído por PAM posterior" : ""}</p>
+          <p>PAM V{pam.pamVersion}{pam.source === "EMAIL" ? " (FG 06 anexado ao e-mail)" : ""} · {pamSentText(pam)}{pam.status === "SUBSTITUIDO" ? " · substituído por PAM posterior" : ""}</p>
         </div>
         <span className={`pl-confirm-state${pam.confirmedAt ? " ok" : ""}`}>
           {pam.confirmedAt ? `Interpretação confirmada${pam.confirmedBy ? ` por ${pam.confirmedBy.split(" <")[0]}` : ""}` : needsReview ? "Interpretação a revisar" : "Interpretação a confirmar"}

@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, max } from "drizzle-orm";
 import type { getDb } from "../db";
 import {
   auditLog,
@@ -7,6 +7,7 @@ import {
   plannerPams,
   plannerSettings,
   rncResponseVersions,
+  rncs,
 } from "../db/schema";
 import {
   DEFAULT_URGENCY_BANDS,
@@ -20,6 +21,7 @@ import {
   type UrgencyBands,
 } from "./planner-calc";
 import { extractCommitments } from "./planner-extract";
+import { looksLikeFg06Name, parseFg06 } from "./planner-fg06";
 import { pairSendings } from "./planner-pairing";
 import { parsePamFormData } from "./response-types";
 
@@ -77,6 +79,48 @@ export async function recalcPam(db: Db, plannerPamId: number) {
   }
 }
 
+type Extracted = ReturnType<typeof extractCommitments>;
+
+async function insertExtractedCommitments(
+  db: Db,
+  target: { rncId: number; plannerPamId: number; pamVersion: number; sentAt: string | null },
+  extracted: Extracted,
+) {
+  const idByOrder = new Map<number, number>();
+  for (const item of extracted) {
+    // Data expressa anterior ao envio do PAM costuma ser erro de redação ou prazo já vencido: pede conferência.
+    const beforeSending = item.fixedDate && target.sentAt && item.fixedDate < target.sentAt;
+    const [row] = await db.insert(plannerCommitments).values({
+      rncId: target.rncId,
+      plannerPamId: target.plannerPamId,
+      pamVersion: target.pamVersion,
+      orderIndex: item.order,
+      kind: item.kind,
+      source: item.source,
+      title: item.title,
+      originalText: item.originalText,
+      quantity: item.quantity,
+      unit: item.unit,
+      baseType: item.baseType,
+      fixedDate: item.fixedDate,
+      milestoneLabel: item.milestoneLabel,
+      extracted: JSON.stringify({
+        quantity: item.quantity, unit: item.unit, baseType: item.baseType, fixedDate: item.fixedDate,
+        milestoneLabel: item.milestoneLabel, predecessorOrder: item.predecessorOrder, order: item.order,
+      }),
+      needsReview: item.needsReview || Boolean(beforeSending),
+      reviewReason: item.reviewReason ?? (beforeSending ? "Data expressa anterior à data de envio do PAM; confirme se está correta." : null),
+    }).returning({ id: plannerCommitments.id });
+    idByOrder.set(item.order, row.id);
+  }
+  for (const item of extracted) {
+    if (item.predecessorOrder === null) continue;
+    await db.update(plannerCommitments).set({ predecessorId: idByOrder.get(item.predecessorOrder) ?? null })
+      .where(eq(plannerCommitments.id, idByOrder.get(item.order)!));
+  }
+  await recalcPam(db, target.plannerPamId);
+}
+
 async function createPamFromVersion(db: Db, version: typeof rncResponseVersions.$inferSelect, sent?: { at: string; eventId: number }) {
   let snapshot: Record<string, unknown> = {};
   try { snapshot = JSON.parse(version.snapshot || "{}"); } catch { /* snapshot inválido: nenhum compromisso */ }
@@ -94,36 +138,7 @@ async function createPamFromVersion(db: Db, version: typeof rncResponseVersions.
     sentEventId: sent?.eventId ?? null,
   }).returning();
 
-  const idByOrder = new Map<number, number>();
-  for (const item of extracted) {
-    const [row] = await db.insert(plannerCommitments).values({
-      rncId: version.rncId,
-      plannerPamId: pam.id,
-      pamVersion: version.version,
-      orderIndex: item.order,
-      kind: item.kind,
-      source: item.source,
-      title: item.title,
-      originalText: item.originalText,
-      quantity: item.quantity,
-      unit: item.unit,
-      baseType: item.baseType,
-      fixedDate: item.fixedDate,
-      milestoneLabel: item.milestoneLabel,
-      extracted: JSON.stringify({
-        quantity: item.quantity, unit: item.unit, baseType: item.baseType, fixedDate: item.fixedDate,
-        milestoneLabel: item.milestoneLabel, predecessorOrder: item.predecessorOrder, order: item.order,
-      }),
-      needsReview: item.needsReview,
-      reviewReason: item.reviewReason,
-    }).returning({ id: plannerCommitments.id });
-    idByOrder.set(item.order, row.id);
-  }
-  for (const item of extracted) {
-    if (item.predecessorOrder === null) continue;
-    await db.update(plannerCommitments).set({ predecessorId: idByOrder.get(item.predecessorOrder) ?? null })
-      .where(eq(plannerCommitments.id, idByOrder.get(item.order)!));
-  }
+  await insertExtractedCommitments(db, { rncId: version.rncId, plannerPamId: pam.id, pamVersion: version.version, sentAt: sent?.at ?? null }, extracted);
   await recalcPam(db, pam.id);
   return pam;
 }
@@ -145,17 +160,71 @@ async function supersedeOlderSentPams(db: Db, rncId: number) {
   }
 }
 
+function nameMentionsRnc(name: string, number: string, year: number) {
+  const target = parseInt(number, 10);
+  return [...name.matchAll(/(\d{2,4})[_\/\s-](\d{4})/g)].some(([, n, y]) => parseInt(n, 10) === target && parseInt(y, 10) === year);
+}
+
+// FG 06 preenchido e enviado por e-mail (ex.: PDF "FG 06 - PAM - RNC 317-2026"): vira o PAM da RNC,
+// com a data do próprio e-mail de envio como data-base. Formulários em branco recebidos não entram (só e-mails enviados).
+async function reconcileEmailPams(db: Db, rncId: number) {
+  const [rnc] = await db.select({ number: rncs.number, year: rncs.year }).from(rncs).where(eq(rncs.id, rncId)).limit(1);
+  if (!rnc) return 0;
+  const events = await db.select().from(emailEvents)
+    .where(and(eq(emailEvents.rncId, rncId), eq(emailEvents.eventType, "envio_resposta"))).orderBy(asc(emailEvents.occurredAt));
+  const pams = await db.select().from(plannerPams).where(eq(plannerPams.rncId, rncId));
+  const known = new Set(pams.filter((pam) => pam.emailEventId !== null).map((pam) => `${pam.emailEventId}|${pam.attachmentName}`));
+  let created = 0;
+
+  for (const event of events) {
+    let attachments: Array<{ id?: string; name: string; extractedText?: string }> = [];
+    try { attachments = JSON.parse(event.attachmentMetadata || "[]"); } catch { continue; }
+    for (const attachment of attachments) {
+      if (!looksLikeFg06Name(attachment.name) || !attachment.extractedText?.trim()) continue;
+      if (known.has(`${event.id}|${attachment.name}`)) continue;
+      const parsed = parseFg06(attachment.extractedText);
+      const belongs = parsed.rncNumber
+        ? parseInt(parsed.rncNumber, 10) === parseInt(rnc.number, 10) && parsed.rncYear === rnc.year
+        : nameMentionsRnc(attachment.name, rnc.number, rnc.year);
+      if (!belongs) continue;
+
+      const sentAt = isoInBrazil(event.occurredAt);
+      const extracted = extractCommitments({ proposal: parsed.proposal, deadline: parsed.deadline, referenceYear: Number(sentAt.slice(0, 4)) });
+      if (!extracted.length) continue;
+      const [current] = await db.select({ value: max(plannerPams.pamVersion) }).from(plannerPams).where(eq(plannerPams.rncId, rncId));
+      const pamVersion = Number(current?.value || 0) + 1;
+      let pam: PlannerPam;
+      try {
+        [pam] = await db.insert(plannerPams).values({
+          rncId, responseVersionId: null, source: "EMAIL", pamVersion, sentAt, sentSource: "EMAIL", sentEventId: event.id,
+          emailEventId: event.id, attachmentId: attachment.id ?? null, attachmentName: attachment.name, documentDate: parsed.documentDate,
+        }).returning();
+      } catch {
+        continue; // outra requisição simultânea já registrou este anexo
+      }
+      await insertExtractedCommitments(db, { rncId, plannerPamId: pam.id, pamVersion, sentAt }, extracted);
+      known.add(`${event.id}|${attachment.name}`);
+      created += 1;
+    }
+  }
+  return created;
+}
+
 // Liga cada PAM ao e-mail de envio real (nunca à data de gravação/importação) e analisa PAMs antigos.
 export async function reconcileRnc(db: Db, rncId: number) {
   const versions = await db.select().from(rncResponseVersions).where(eq(rncResponseVersions.rncId, rncId))
     .orderBy(asc(rncResponseVersions.responseSequence), asc(rncResponseVersions.id));
   const pamVersions = versions.filter((version) => version.responseType === "PAM");
-  if (!pamVersions.length) return { created: 0 };
+  const emailCreated = await reconcileEmailPams(db, rncId);
+  if (!pamVersions.length) {
+    await supersedeOlderSentPams(db, rncId);
+    return { created: emailCreated };
+  }
 
   let pams = await db.select().from(plannerPams).where(eq(plannerPams.rncId, rncId));
   const events = await db.select().from(emailEvents)
     .where(and(eq(emailEvents.rncId, rncId), eq(emailEvents.eventType, "envio_resposta"))).orderBy(asc(emailEvents.occurredAt));
-  let created = 0;
+  let created = emailCreated;
 
   for (const pairing of pairSendings({ versions, events, pams })) {
     const version = versions.find((item) => item.id === pairing.versionId)!;
@@ -195,7 +264,9 @@ export async function syncPamVersion(db: Db, rncId: number, versionId: number) {
 export async function reconcileAll(db: Db, rncIds?: number[]) {
   const versions = await db.select({ rncId: rncResponseVersions.rncId }).from(rncResponseVersions)
     .where(eq(rncResponseVersions.responseType, "PAM"));
-  const ids = [...new Set(versions.map((version) => version.rncId))].filter((id) => !rncIds || rncIds.includes(id));
+  const withAttachment = await db.selectDistinct({ rncId: emailEvents.rncId }).from(emailEvents)
+    .where(and(eq(emailEvents.eventType, "envio_resposta"), ilike(emailEvents.attachmentMetadata, "%fg%06%")));
+  const ids = [...new Set([...versions, ...withAttachment].map((row) => row.rncId))].filter((id) => !rncIds || rncIds.includes(id));
   let created = 0;
   for (const id of ids) created += (await reconcileRnc(db, id)).created;
   return { rncs: ids.length, created };

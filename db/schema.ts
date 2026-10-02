@@ -202,7 +202,13 @@ export const apiRateLimits = pgTable("api_rate_limits", {
 export const plannerPams = pgTable("planner_pams", {
   id: serial("id").primaryKey(),
   rncId: integer("rnc_id").notNull().references(() => rncs.id),
-  responseVersionId: integer("response_version_id").notNull().references(() => rncResponseVersions.id),
+  // Nulo quando o PAM veio como anexo de e-mail (FG 06 elaborado fora do sistema).
+  responseVersionId: integer("response_version_id").references(() => rncResponseVersions.id),
+  source: text("source").notNull().default("SISTEMA"),
+  emailEventId: integer("email_event_id"),
+  attachmentId: text("attachment_id"),
+  attachmentName: text("attachment_name"),
+  documentDate: text("document_date"),
   pamVersion: integer("pam_version").notNull(),
   sentAt: text("sent_at"),
   sentSource: text("sent_source"),
@@ -216,6 +222,7 @@ export const plannerPams = pgTable("planner_pams", {
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("planner_pams_version_unique").on(table.responseVersionId),
+  uniqueIndex("planner_pams_email_unique").on(table.emailEventId, table.attachmentName),
   index("planner_pams_rnc_idx").on(table.rncId),
 ]);
 

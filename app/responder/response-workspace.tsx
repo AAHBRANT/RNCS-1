@@ -769,7 +769,7 @@ export function ResponseWorkspace() {
             {(() => {
               if (!plannerData || !rnc) return null;
               const items = buildItems({ commitments: plannerData.commitments, pams: plannerData.pams, rncs: plannerData.rncs, bands: plannerData.bands, today: plannerData.today });
-              const currentPam = [...plannerData.pams].filter((pam) => pam.rncId === rnc.id && pam.status !== "SUBSTITUIDO").sort((a, b) => b.pamVersion - a.pamVersion)[0];
+              const currentPam = [...plannerData.pams].filter((pam) => pam.rncId === rnc.id && pam.source !== "EMAIL" && pam.status !== "SUBSTITUIDO").sort((a, b) => b.pamVersion - a.pamVersion)[0];
               if (!currentPam) {
                 return <p className="template-note">Depois de salvar o PAM, os prazos e etapas identificados no texto aparecem aqui para confirmação e alimentam o Planner.</p>;
               }

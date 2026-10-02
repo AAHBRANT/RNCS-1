@@ -2,7 +2,7 @@ import { isoInBrazil, parseTimestamp } from "./planner-calc";
 
 export type PairingVersion = { id: number; responseType: string; createdAt: string };
 export type PairingEvent = { id: number; occurredAt: string };
-export type PairingPam = { responseVersionId: number; sentAt: string | null; sentEventId: number | null };
+export type PairingPam = { responseVersionId: number | null; sentAt: string | null; sentEventId: number | null };
 export type Pairing = { eventId: number; versionId: number; sentAt: string };
 
 // Decide qual versão de PAM cada e-mail de envio realmente enviou.

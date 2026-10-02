@@ -41,7 +41,7 @@ const ABS_PREFIX = String.raw`(?:(?:em\s+ate|ate\s+o\s+dia|ate\s+a\s+data\s+de|a
 const ABS_NUMERIC = new RegExp(String.raw`${ABS_PREFIX}(\d{1,2})\s*[\/.\-]\s*(\d{1,2})\s*[\/.\-]\s*(\d{4}|\d{2})(?!\d)`, "g");
 const ABS_TEXT = new RegExp(String.raw`${ABS_PREFIX}(\d{1,2})\s+de\s+(${MONTHS.join("|")})(?:\s+de\s+(\d{4}))?`, "g");
 const ABS_SHORT = new RegExp(String.raw`(?:em\s+ate|ate\s+o\s+dia|ate|no\s+dia|para\s+o\s+dia|dia|em|para)\s+(\d{1,2})\s*\/\s*(\d{1,2})(?![\/\d])`, "g");
-const AFTER_MARKER = /^\s*,?\s*(?:apos|depois\s+d[aeo]s?|a\s+contar\s+d[aeo]s?|a\s+partir\s+d[aeo]s?|contados?\s+d[aeo]s?|contado\s+a\s+partir\s+d[aeo]s?)\s+/;
+const AFTER_MARKER = /^\s*,?\s*(?:para\s+cada\s+\w+\s+)?(?:apos|depois\s+d[aeo]s?|a\s+contar\s+d[aeo]s?|a\s+partir\s+d[aeo]s?|contados?\s+d[aeo]s?|contado\s+a\s+partir\s+d[aeo]s?)\s+/;
 
 type Token =
   | { type: "QTY"; start: number; end: number; quantity: number | null; unit: DeadlineUnit; unsupported: boolean }
@@ -127,10 +127,20 @@ function cleanTitle(raw: string) {
     if (text === before) break;
   }
   text = text.replace(/[\s,;:\-–—]+$/, "").replace(/\s+(?:em|ate|de|no|na|para|a|e)$/i, "").replace(/[\s,;:\-–—]+$/, "").trim();
+  for (let guard = 0; guard < 4; guard++) {
+    const before = text;
+    text = text
+      .replace(/[\s|–—-]+(?:prazo(?:\s+m[aá]ximo)?|meta\s+referencial)\s*:?\s*$/i, "")
+      .replace(/[\s|–—-]+(?:etapa\s+)?conclu[ií]d[ao]\s*$/i, "")
+      .replace(/[\s,;:|–—-]+$/, "");
+    if (text === before) break;
+  }
   if (!text) return "";
   const capped = text.length > 140 ? `${text.slice(0, 137)}…` : text;
   return capped.charAt(0).toUpperCase() + capped.slice(1);
 }
+
+const NO_ACTION_REASON = "Não foi possível identificar a ação relacionada ao prazo.";
 
 type Pending = ExtractedCommitment & { refItem: number | null; refPrevious: boolean; marcoText: string; hintWords: string | null };
 
@@ -212,7 +222,8 @@ function parseText(text: string, options: { referenceYear: number; source: "PROP
           consumedEnd = limit;
         }
         if (!title && pendingTitle) { title = pendingTitle; usedPending = true; }
-        if (!title) { title = `Compromisso ${out.length + 1}`; reviewReason = "Não foi possível identificar a ação relacionada ao prazo."; }
+        if (!title) { title = `Compromisso ${out.length + 1}`; reviewReason = NO_ACTION_REASON; }
+        if (!reviewReason && /conclu[ií]d[ao]/i.test(titleRaw)) reviewReason = "Item informado como já concluído no PAM; confirme e registre a conclusão.";
         cursor = consumedEnd;
 
         const clause = raw.slice(Math.max(0, token.start - titleRaw.length), consumedEnd).trim();
@@ -275,8 +286,12 @@ export function extractCommitments(input: { proposal?: string | null; deadline?:
       && other.fixedDate === item.fixedDate && other.predecessorOrder === null && other.milestoneLabel === item.milestoneLabel);
     if (twin) { twin.kind = "FINAL"; continue; }
     const single = deadline.length === 1;
+    // O título genérico do prazo final não é uma ação a identificar: descarta o aviso de título não encontrado.
+    const titleWarning = item.reviewReason === NO_ACTION_REASON;
     all.push({
       ...item,
+      needsReview: titleWarning ? false : item.needsReview,
+      reviewReason: titleWarning ? null : item.reviewReason,
       kind: "FINAL",
       title: single || /^compromisso\s+\d+$/i.test(item.title) ? "Prazo final do PAM" : item.title,
       refItem: null, refPrevious: false, hintWords: null,
@@ -304,8 +319,8 @@ export function extractCommitments(input: { proposal?: string | null; deadline?:
 }
 
 export function ruleText(item: Pick<ExtractedCommitment, "quantity" | "unit" | "baseType" | "fixedDate" | "milestoneLabel" | "predecessorOrder">, titleOf: (order: number) => string | null) {
-  const unit = item.unit === "UTEIS" ? "dias úteis" : "dias";
-  const quantity = item.quantity === null ? "prazo não identificado" : `${item.quantity} ${item.quantity === 1 ? unit.replace(/s$/, "").replace("dias úteis", "dia útil") : unit}`;
+  const unitWord = (amount: number) => (item.unit === "UTEIS" ? (amount === 1 ? "dia útil" : "dias úteis") : (amount === 1 ? "dia" : "dias"));
+  const quantity = item.quantity === null ? "prazo não identificado" : `${item.quantity} ${unitWord(item.quantity)}`;
   if (item.baseType === "FIXED_DATE") return item.fixedDate ? `Data expressa no PAM (${item.fixedDate.split("-").reverse().join("/")})` : "Data expressa no PAM";
   if (item.baseType === "PAM_SENT_DATE") return `${quantity} após o envio do PAM`;
   if (item.baseType === "PREDECESSOR_COMPLETION") {
