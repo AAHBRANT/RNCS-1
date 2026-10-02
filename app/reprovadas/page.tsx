@@ -53,12 +53,10 @@ function CommentCell({ row, onSaved }: { row: Row; onSaved: (id: number, saved: 
   return (
     <div className="rj-comment">
       <textarea rows={4} value={text} onChange={(event) => setText(event.target.value)} placeholder="Escreva seus comentários sobre esta RNC…" aria-label={`Comentários da RNC ${row.number}/${row.year}`} />
-      <div>
-        <button type="button" className="button secondary" disabled={!dirty || state === "saving"} onClick={() => void save()}>{state === "saving" ? "Salvando…" : "Salvar"}</button>
-        <small className={state === "error" ? "rj-error" : undefined}>
-          {state === "error" ? "Não foi possível salvar. Tente novamente." : dirty ? "Alterações não salvas" : row.commentAt ? `Salvo por ${row.commentBy} em ${formatDateTime(row.commentAt)}` : ""}
-        </small>
-      </div>
+      <small className={state === "error" ? "rj-error" : undefined}>
+        {state === "error" ? "Não foi possível salvar. Tente novamente." : dirty ? "Alterações não salvas" : row.commentAt ? `Salvo por ${row.commentBy} em ${formatDateTime(row.commentAt)}` : ""}
+      </small>
+      <button type="button" className="button secondary" disabled={!dirty || state === "saving"} onClick={() => void save()}>{state === "saving" ? "Salvando…" : "Salvar"}</button>
     </div>
   );
 }
@@ -160,7 +158,7 @@ export default function ReprovadasPage() {
                 <tbody>
                   {filtered.map((row) => (
                     <tr key={row.id}>
-                      <td><strong>{row.number}/{row.year}</strong><small>{row.workName}</small></td>
+                      <td><strong>{row.number}/{row.year}</strong></td>
                       <td>{row.description}</td>
                       <td><ReasonCell reason={row.reason} /></td>
                       <td><CommentCell row={row} onSaved={saved} /></td>
