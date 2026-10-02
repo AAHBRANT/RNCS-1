@@ -17,6 +17,7 @@ import {
   unauthorized,
 } from "../../../../../lib/access-control";
 import { enforceRateLimit } from "../../../../../lib/rate-limit";
+import { normalizeResponseType, sanitizePamFormData } from "../../../../../lib/response-types";
 
 const textFields = [
   "directive",
@@ -66,16 +67,32 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   if (!rnc) return Response.json({ error: "RNC não encontrada." }, { status: 404 });
   if (!canAccessType(session, rnc.type)) return forbidden("Esta RNC pertence a uma disciplina não autorizada para você.");
 
-  const [draftRows, versions, emails] = await Promise.all([
-    db.select().from(rncResponseDrafts).where(eq(rncResponseDrafts.rncId, rncId)).limit(1),
+  const responseType = normalizeResponseType(new URL(request.url).searchParams.get("type"));
+  const [allDrafts, allVersions, emails] = await Promise.all([
+    db.select().from(rncResponseDrafts).where(eq(rncResponseDrafts.rncId, rncId)),
     db.select().from(rncResponseVersions)
       .where(eq(rncResponseVersions.rncId, rncId))
-      .orderBy(desc(rncResponseVersions.version)),
+      .orderBy(desc(rncResponseVersions.responseSequence), desc(rncResponseVersions.id)),
     db.select().from(emailEvents)
       .where(eq(emailEvents.rncId, rncId))
       .orderBy(desc(emailEvents.occurredAt)),
   ]);
-  return Response.json({ rnc, draft: draftRows[0] || null, versions, emails, user: accessControlEnabled() ? session : null });
+  // `versions` e `draft` seguem o tipo pedido (padrão TRATATIVA, igual ao comportamento anterior);
+  // `drafts` e `allVersions` expõem todos os tipos para o histórico completo da RNC.
+  const draft = allDrafts.find((item) => item.responseType === responseType) || null;
+  const versions = allVersions
+    .filter((item) => item.responseType === responseType)
+    .sort((a, b) => b.version - a.version);
+  const drafts = allDrafts.map((item) => ({
+    responseType: item.responseType,
+    status: item.status,
+    updatedBy: item.updatedBy,
+    updatedAt: item.updatedAt,
+  }));
+  return Response.json({
+    rnc, responseType, draft, drafts, versions, allVersions, emails,
+    user: accessControlEnabled() ? session : null,
+  });
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -117,10 +134,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         : "Seu perfil não pode realizar esta transição.",
     );
   }
+  const responseType = normalizeResponseType(body.responseType);
   if (status === "Documento aprovado") {
     const [latestDocument] = await db.select({ id: rncResponseDocuments.id })
       .from(rncResponseDocuments)
-      .where(eq(rncResponseDocuments.rncId, rncId))
+      .where(and(
+        eq(rncResponseDocuments.rncId, rncId),
+        eq(rncResponseDocuments.responseType, responseType),
+      ))
       .orderBy(desc(rncResponseDocuments.version))
       .limit(1);
     if (!latestDocument) {
@@ -131,9 +152,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }
   }
   const now = new Date().toISOString();
+  const formData = responseType === "PAM" ? JSON.stringify(sanitizePamFormData(body.formData)) : "{}";
   const draftValues = {
     rncId,
+    responseType,
     ...values,
+    formData,
     selectedAttachments: JSON.stringify(selectedAttachments),
     status,
     updatedBy: `${session.name} <${session.email}>`,
@@ -141,18 +165,25 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   };
   const [draft] = await db.insert(rncResponseDrafts).values(draftValues)
     .onConflictDoUpdate({
-      target: rncResponseDrafts.rncId,
+      target: [rncResponseDrafts.rncId, rncResponseDrafts.responseType],
       set: draftValues,
     }).returning();
 
+  // Versão numerada dentro do tipo (Tratativa V1, V2 / PAM V1, V2); a sequência é global na RNC.
   const [currentVersion] = await db.select({ value: max(rncResponseVersions.version) })
+    .from(rncResponseVersions)
+    .where(and(eq(rncResponseVersions.rncId, rncId), eq(rncResponseVersions.responseType, responseType)));
+  const [currentSequence] = await db.select({ value: max(rncResponseVersions.responseSequence) })
     .from(rncResponseVersions).where(eq(rncResponseVersions.rncId, rncId));
   const version = Number(currentVersion?.value || 0) + 1;
+  const responseSequence = Number(currentSequence?.value || 0) + 1;
   await db.insert(rncResponseVersions).values({
     rncId,
+    responseType,
+    responseSequence,
     version,
     snapshot: JSON.stringify({ ...draftValues, savedAt: now }),
     createdBy: `${session.name} <${session.email}>`,
   });
-  return Response.json({ draft, version });
+  return Response.json({ draft, version, responseType, responseSequence });
 }

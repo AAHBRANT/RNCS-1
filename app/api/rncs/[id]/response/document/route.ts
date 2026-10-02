@@ -8,6 +8,7 @@ import {
   unauthorized,
 } from "../../../../../../lib/access-control";
 import { enforceRateLimit } from "../../../../../../lib/rate-limit";
+import { normalizeResponseType } from "../../../../../../lib/response-types";
 
 const MAX_DOCUMENT_SIZE = 3 * 1024 * 1024;
 const DOCX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -57,8 +58,13 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     });
   }
 
+  // `type=ALL` lista todos os tipos (dossiê/histórico); sem parâmetro, mantém o padrão TRATATIVA.
+  const typeParam = new URL(request.url).searchParams.get("type");
+  const listAll = typeParam?.toUpperCase() === "ALL";
+  const responseType = normalizeResponseType(typeParam);
   const documents = await access.db.select({
     id: rncResponseDocuments.id,
+    responseType: rncResponseDocuments.responseType,
     version: rncResponseDocuments.version,
     fileName: rncResponseDocuments.fileName,
     contentType: rncResponseDocuments.contentType,
@@ -66,8 +72,10 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     uploadedBy: rncResponseDocuments.uploadedBy,
     createdAt: rncResponseDocuments.createdAt,
   }).from(rncResponseDocuments)
-    .where(eq(rncResponseDocuments.rncId, access.rncId))
-    .orderBy(desc(rncResponseDocuments.version));
+    .where(listAll
+      ? eq(rncResponseDocuments.rncId, access.rncId)
+      : and(eq(rncResponseDocuments.rncId, access.rncId), eq(rncResponseDocuments.responseType, responseType)))
+    .orderBy(desc(rncResponseDocuments.createdAt), desc(rncResponseDocuments.id));
   return Response.json({ documents });
 }
 
@@ -100,11 +108,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return Response.json({ error: "O arquivo selecionado não é um documento Word válido." }, { status: 400 });
   }
 
+  const responseType = normalizeResponseType(form.get("responseType"));
   const [currentVersion] = await access.db.select({ value: max(rncResponseDocuments.version) })
-    .from(rncResponseDocuments).where(eq(rncResponseDocuments.rncId, access.rncId));
+    .from(rncResponseDocuments)
+    .where(and(eq(rncResponseDocuments.rncId, access.rncId), eq(rncResponseDocuments.responseType, responseType)));
   const version = Number(currentVersion?.value || 0) + 1;
   const [document] = await access.db.insert(rncResponseDocuments).values({
     rncId: access.rncId,
+    responseType,
     version,
     fileName: file.name,
     contentType: DOCX_CONTENT_TYPE,

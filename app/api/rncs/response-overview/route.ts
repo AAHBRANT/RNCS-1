@@ -1,4 +1,4 @@
-import { eq, isNotNull, notInArray } from "drizzle-orm";
+import { eq, exists, notInArray, sql } from "drizzle-orm";
 import { ensureDatabase, getDb } from "../../../../db";
 import { rncResponseDrafts, rncs, works } from "../../../../db/schema";
 import { accessControlEnabled, canAccessType, canAccessWork, sessionFromRequest, unauthorized } from "../../../../lib/access-control";
@@ -23,11 +23,10 @@ export async function GET(request: Request) {
       status: rncs.status,
       responseOwner: rncs.responseOwner,
       updatedAt: rncs.updatedAt,
-      hasDraft: isNotNull(rncResponseDrafts.id),
+      hasDraft: exists(db.select({ one: sql`1` }).from(rncResponseDrafts).where(eq(rncResponseDrafts.rncId, rncs.id))),
     })
       .from(rncs)
       .innerJoin(works, eq(rncs.workId, works.id))
-      .leftJoin(rncResponseDrafts, eq(rncResponseDrafts.rncId, rncs.id))
       .where(notInArray(rncs.status, ["Aprovada", "Reprovada"]));
 
     const scoped = rows.filter(

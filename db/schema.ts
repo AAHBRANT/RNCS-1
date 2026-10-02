@@ -119,6 +119,8 @@ export const rncConflicts = pgTable("rnc_conflicts", {
 export const rncResponseDrafts = pgTable("rnc_response_drafts", {
   id: serial("id").primaryKey(),
   rncId: integer("rnc_id").notNull().references(() => rncs.id),
+  responseType: text("response_type").notNull().default("TRATATIVA"),
+  formData: text("form_data").notNull().default("{}"),
   directive: text("directive").notNull().default(""),
   analysis: text("analysis").notNull().default(""),
   actionsTaken: text("actions_taken").notNull().default(""),
@@ -141,24 +143,27 @@ export const rncResponseDrafts = pgTable("rnc_response_drafts", {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
-  uniqueIndex("rnc_response_drafts_rnc_unique").on(table.rncId),
+  uniqueIndex("rnc_response_drafts_rnc_type_unique").on(table.rncId, table.responseType),
 ]);
 
 export const rncResponseVersions = pgTable("rnc_response_versions", {
   id: serial("id").primaryKey(),
   rncId: integer("rnc_id").notNull().references(() => rncs.id),
+  responseType: text("response_type").notNull().default("TRATATIVA"),
+  responseSequence: integer("response_sequence").notNull().default(0),
   version: integer("version").notNull(),
   snapshot: text("snapshot").notNull(),
   createdBy: text("created_by").notNull().default(""),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
-  uniqueIndex("rnc_response_versions_number_unique").on(table.rncId, table.version),
+  uniqueIndex("rnc_response_versions_type_number_unique").on(table.rncId, table.responseType, table.version),
   index("rnc_response_versions_rnc_idx").on(table.rncId),
 ]);
 
 export const rncResponseDocuments = pgTable("rnc_response_documents", {
   id: serial("id").primaryKey(),
   rncId: integer("rnc_id").notNull().references(() => rncs.id),
+  responseType: text("response_type").notNull().default("TRATATIVA"),
   version: integer("version").notNull(),
   fileName: text("file_name").notNull(),
   contentType: text("content_type").notNull(),
@@ -167,7 +172,7 @@ export const rncResponseDocuments = pgTable("rnc_response_documents", {
   uploadedBy: text("uploaded_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
-  uniqueIndex("rnc_response_documents_number_unique").on(table.rncId, table.version),
+  uniqueIndex("rnc_response_documents_type_number_unique").on(table.rncId, table.responseType, table.version),
   index("rnc_response_documents_rnc_idx").on(table.rncId),
 ]);
 

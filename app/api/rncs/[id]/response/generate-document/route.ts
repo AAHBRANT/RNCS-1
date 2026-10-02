@@ -1,4 +1,4 @@
-import { eq, max } from "drizzle-orm";
+import { and, eq, max } from "drizzle-orm";
 import { ensureDatabase, getDb } from "../../../../../../db";
 import { rncResponseDocuments, rncs, works } from "../../../../../../db/schema";
 import {
@@ -102,11 +102,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
 
   const [currentVersion] = await db.select({ value: max(rncResponseDocuments.version) })
-    .from(rncResponseDocuments).where(eq(rncResponseDocuments.rncId, rncId));
+    .from(rncResponseDocuments)
+    .where(and(eq(rncResponseDocuments.rncId, rncId), eq(rncResponseDocuments.responseType, "TRATATIVA")));
   const version = Number(currentVersion?.value || 0) + 1;
   const fileName = `Tratativa_RNC_${rnc.number}_${rnc.year}.docx`;
   const [document] = await db.insert(rncResponseDocuments).values({
     rncId,
+    responseType: "TRATATIVA",
     version,
     fileName,
     contentType: DOCX_CONTENT_TYPE,

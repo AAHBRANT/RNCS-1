@@ -234,6 +234,26 @@ async function initializeDatabaseOnce() {
         SELECT id FROM rncs
         WHERE year = 2026 AND number IN ('164', '269')
       )`;
+  // Tipos de resposta (TRATATIVA | PAM): aditivo; registros existentes viram TRATATIVA.
+  await sql`ALTER TABLE rnc_response_drafts ADD COLUMN IF NOT EXISTS response_type TEXT NOT NULL DEFAULT 'TRATATIVA'`;
+  await sql`ALTER TABLE rnc_response_drafts ADD COLUMN IF NOT EXISTS form_data TEXT NOT NULL DEFAULT '{}'`;
+  await sql`ALTER TABLE rnc_response_versions ADD COLUMN IF NOT EXISTS response_type TEXT NOT NULL DEFAULT 'TRATATIVA'`;
+  await sql`ALTER TABLE rnc_response_versions ADD COLUMN IF NOT EXISTS response_sequence INTEGER NOT NULL DEFAULT 0`;
+  await sql`ALTER TABLE rnc_response_documents ADD COLUMN IF NOT EXISTS response_type TEXT NOT NULL DEFAULT 'TRATATIVA'`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS rnc_response_drafts_rnc_type_unique ON rnc_response_drafts(rnc_id, response_type)`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS rnc_response_versions_type_number_unique ON rnc_response_versions(rnc_id, response_type, version)`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS rnc_response_documents_type_number_unique ON rnc_response_documents(rnc_id, response_type, version)`;
+  await sql`ALTER TABLE rnc_response_drafts DROP CONSTRAINT IF EXISTS rnc_response_drafts_rnc_unique`;
+  await sql`ALTER TABLE rnc_response_versions DROP CONSTRAINT IF EXISTS rnc_response_versions_number_unique`;
+  await sql`ALTER TABLE rnc_response_documents DROP CONSTRAINT IF EXISTS rnc_response_documents_number_unique`;
+  await sql`WITH claimed AS (
+    INSERT INTO app_migrations (key)
+    VALUES ('2026-10-02-response-sequence-backfill')
+    ON CONFLICT (key) DO NOTHING
+    RETURNING key
+  )
+  UPDATE rnc_response_versions SET response_sequence = version
+  WHERE EXISTS (SELECT 1 FROM claimed) AND response_sequence = 0`;
   await sql`CREATE TABLE IF NOT EXISTS access_users (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
