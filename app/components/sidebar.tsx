@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
-  Bell, ClipboardList, Download, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Reply, Tag,
+  BarChart3, Bell, ClipboardList, Download, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Reply, Tag,
 } from "lucide-react";
 
 export type SidebarProps = {
@@ -46,6 +46,9 @@ export function Sidebar({
           )}
           <a href="/responder" className={isActive("/responder") ? "active" : ""} title="Responder">
             <span className="icon"><Reply size={14} /></span>{!collapsed && <span className="label">Responder</span>}
+          </a>
+          <a href="/relatorio" className={isActive("/relatorio") ? "active" : ""} title="Relatório">
+            <span className="icon"><BarChart3 size={14} /></span>{!collapsed && <span className="label">Relatório</span>}
           </a>
         </div>
         <p title="Notificações">
