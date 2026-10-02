@@ -118,6 +118,12 @@ export function canEditRnc(session: AccessSession) {
   return session.role === "admin";
 }
 
+// Permissão específica do Planner (equivale a CAN_ADJUST_PLANNER_DEADLINE): confirmar interpretação,
+// ajustar datas/dependências e concluir compromissos. Redatores apenas visualizam.
+export function canAdjustPlannerDeadline(session: AccessSession) {
+  return session.role === "admin" || session.role === "reviewer_approver";
+}
+
 export function canSaveResponseStatus(session: AccessSession, status: string) {
   if (session.role === "admin" || session.role === "reviewer_approver") {
     return ["Rascunho", "Em revisão", "Documento aprovado"].includes(status);

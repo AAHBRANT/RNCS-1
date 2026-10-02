@@ -9,7 +9,7 @@ import {
 
 export type TimelineKind =
   | "RECEBIDA" | "ENVIO" | "RETORNO" | "TRATATIVA" | "PAM"
-  | "REPROVACAO" | "APROVACAO" | "DOCUMENTO" | "STATUS";
+  | "REPROVACAO" | "APROVACAO" | "DOCUMENTO" | "STATUS" | "PLANEJAMENTO";
 
 export const TIMELINE_BADGE: Record<TimelineKind, string> = {
   RECEBIDA: "RECEBIDA",
@@ -21,6 +21,7 @@ export const TIMELINE_BADGE: Record<TimelineKind, string> = {
   APROVACAO: "APROVAÇÃO",
   DOCUMENTO: "DOCUMENTO",
   STATUS: "ALTERAÇÃO DE STATUS",
+  PLANEJAMENTO: "PLANEJAMENTO",
 };
 
 export type TimelineRef =
@@ -61,6 +62,20 @@ export function statusKind(status: string): TimelineKind {
   if (/^Reprovada/.test(status)) return "REPROVACAO";
   if (status === "Aprovada") return "APROVACAO";
   return "STATUS";
+}
+
+// Ajustes do Planner ficam na auditoria da RNC (campo planner_*); aqui viram uma linha legível do histórico.
+export function plannerChangeText(change: TimelineChange): { title: string; detail?: string } {
+  const parts = (change.newValue || "").split(" · ");
+  const who = change.userName || "usuário";
+  if (change.field === "planner_prazo") {
+    const restored = parts[2]?.includes("removido");
+    return {
+      title: `Prazo do Planner ${restored ? "restaurado" : "ajustado"} de ${change.oldValue || "—"} para ${parts[0]} por ${who}.`,
+      detail: [parts[1], parts.find((part) => part.startsWith("motivo:"))].filter(Boolean).join(" — ") || undefined,
+    };
+  }
+  return { title: parts[0], detail: parts.slice(1).join(" · ") || who };
 }
 
 export function buildTimeline(input: {
@@ -109,6 +124,15 @@ export function buildTimeline(input: {
   }
 
   for (const change of input.changes) {
+    if (change.field.startsWith("planner_") && change.newValue) {
+      items.push({
+        key: `change-${change.id}`,
+        kind: "PLANEJAMENTO",
+        at: change.changedAt,
+        ...plannerChangeText(change),
+      });
+      continue;
+    }
     if (change.field !== "status" || !change.newValue) continue;
     items.push({
       key: `change-${change.id}`,

@@ -17,6 +17,8 @@ import {
   type PamFormData,
   type ResponseType,
 } from "../../lib/response-types";
+import { buildItems, rncLabel as plannerRncLabel, type PlannerApiData } from "../../lib/planner-view";
+import { IdentifiedDeadlines } from "../planner/identified-deadlines";
 import {
   TIMELINE_BADGE,
   buildTimeline,
@@ -125,6 +127,8 @@ export function ResponseWorkspace() {
   const [allVersions, setAllVersions] = useState<Version[]>([]);
   const [pam, setPam] = useState<PamFormData>({ ...emptyPamFormData });
   const [initialPam, setInitialPam] = useState<PamFormData>({ ...emptyPamFormData });
+  const [plannerData, setPlannerData] = useState<PlannerApiData | null>(null);
+  const [plannerBusy, setPlannerBusy] = useState(false);
   const [historyChanges, setHistoryChanges] = useState<AuditChange[]>([]);
   const [allDocuments, setAllDocuments] = useState<WordDocument[]>([]);
   const [viewingVersion, setViewingVersion] = useState<Version | null>(null);
@@ -181,9 +185,14 @@ export function ResponseWorkspace() {
       const initial = available.some((item: RncListItem) => String(item.id) === requested)
         ? requested
         : available[0] ? String(available[0].id) : "";
+      const params = new URLSearchParams(window.location.search);
+      const typeParam = params.get("type");
+      const explicitType = typeParam === "PAM" || typeParam === "TRATATIVA" ? typeParam : null;
       setSelectedId(initial || "");
-      setResponseType(defaultTypeForStatus(available.find((item: RncListItem) => String(item.id) === initial)?.status));
-      setTypeChosen(false);
+      setResponseType(explicitType ?? defaultTypeForStatus(available.find((item: RncListItem) => String(item.id) === initial)?.status));
+      setTypeChosen(Boolean(explicitType));
+      const panelParam = params.get("panel");
+      if (panelParam === "versions" || panelParam === "documents") setActivePanel(panelParam);
     } catch {
       setNotice("Não foi possível carregar as RNCs.");
     }
@@ -285,6 +294,33 @@ export function ResponseWorkspace() {
     }
   }
 
+  const plannerRncId = rnc?.id ?? null;
+
+  async function loadPlanner(rncId: number) {
+    try {
+      const response = await fetch(`/api/planner?rncId=${rncId}`, { cache: "no-store" });
+      if (!response.ok) return;
+      setPlannerData((await response.json()) as PlannerApiData);
+    } catch {
+      // Os prazos identificados são complementares; falha aqui não interrompe a resposta.
+    }
+  }
+
+  async function confirmPlannerPam(pamId: number) {
+    setPlannerBusy(true);
+    try {
+      const response = await fetch(`/api/planner/pams/${pamId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "confirm" }) });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Não foi possível confirmar a interpretação.");
+      setNotice("Interpretação dos prazos confirmada. Ela alimenta apenas o Planner; o PAM não foi alterado.");
+      if (plannerRncId) await loadPlanner(plannerRncId);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Não foi possível confirmar a interpretação.");
+    } finally {
+      setPlannerBusy(false);
+    }
+  }
+
   function openTimelineItem(item: TimelineItem) {
     if (item.ref?.type === "version") {
       const target = allVersions.find((version) => version.id === item.ref!.id);
@@ -359,6 +395,16 @@ export function ResponseWorkspace() {
       setPreviewPdfUrl(null);
     };
   }, [previewDocument, rnc]);
+
+  useEffect(() => {
+    if (!plannerRncId || responseType !== "PAM") return;
+    let active = true;
+    fetch(`/api/planner?rncId=${plannerRncId}`, { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => { if (active && payload) setPlannerData(payload as PlannerApiData); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [plannerRncId, responseType, allVersions.length]);
 
   function update(field: keyof Draft, value: string) {
     setDraft((current) => ({ ...current, [field]: value }));
@@ -720,6 +766,27 @@ export function ResponseWorkspace() {
               <label className="editor-field"><span>Responsável</span><input type="text" value={pam.responsible} onChange={(event) => setPam((current) => ({ ...current, responsible: event.target.value }))} placeholder="Responsável da área inspecionada" /></label>
               <label className="editor-field"><span>Prazo para o PAM</span><input type="text" value={pam.deadline} onChange={(event) => setPam((current) => ({ ...current, deadline: event.target.value }))} placeholder="Ex.: 15/11/2026 ou 30 dias" /></label>
             </div>
+            {(() => {
+              if (!plannerData || !rnc) return null;
+              const items = buildItems({ commitments: plannerData.commitments, pams: plannerData.pams, rncs: plannerData.rncs, bands: plannerData.bands, today: plannerData.today });
+              const currentPam = [...plannerData.pams].filter((pam) => pam.rncId === rnc.id && pam.status !== "SUBSTITUIDO").sort((a, b) => b.pamVersion - a.pamVersion)[0];
+              if (!currentPam) {
+                return <p className="template-note">Depois de salvar o PAM, os prazos e etapas identificados no texto aparecem aqui para confirmação e alimentam o Planner.</p>;
+              }
+              return <>
+                <IdentifiedDeadlines
+                  rncLabel={plannerRncLabel(rnc)}
+                  pam={currentPam}
+                  items={items.filter((item) => item.plannerPamId === currentPam.id)}
+                  canAdjust={plannerData.canAdjust}
+                  busy={plannerBusy}
+                  onConfirm={() => void confirmPlannerPam(currentPam.id)}
+                  onAdjust={() => { window.location.href = `/planner?rnc=${rnc.id}`; }}
+                  onSentDate={() => { window.location.href = `/planner?rnc=${rnc.id}`; }}
+                />
+                <a className="template-note" href={`/planner?rnc=${rnc.id}`}>Abrir esta RNC no Planner</a>
+              </>;
+            })()}
           </> : <>
           <section className="automatic-template-fields">
             <div><span>RNC Nº</span><strong>{rnc.number}/{rnc.year}</strong></div>

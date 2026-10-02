@@ -17,6 +17,7 @@ import {
   unauthorized,
 } from "../../../../../lib/access-control";
 import { enforceRateLimit } from "../../../../../lib/rate-limit";
+import { syncPamVersion } from "../../../../../lib/planner-service";
 import { normalizeResponseType, sanitizePamFormData } from "../../../../../lib/response-types";
 
 const textFields = [
@@ -177,13 +178,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     .from(rncResponseVersions).where(eq(rncResponseVersions.rncId, rncId));
   const version = Number(currentVersion?.value || 0) + 1;
   const responseSequence = Number(currentSequence?.value || 0) + 1;
-  await db.insert(rncResponseVersions).values({
+  const [savedVersion] = await db.insert(rncResponseVersions).values({
     rncId,
     responseType,
     responseSequence,
     version,
     snapshot: JSON.stringify({ ...draftValues, savedAt: now }),
     createdBy: `${session.name} <${session.email}>`,
-  });
+  }).returning({ id: rncResponseVersions.id });
+  if (responseType === "PAM") {
+    // Extrai os prazos do PAM para o Planner; uma falha aqui nunca impede o salvamento da resposta.
+    try { await syncPamVersion(db, rncId, savedVersion.id); } catch (error) { console.error("Planner: falha ao extrair prazos do PAM", error); }
+  }
   return Response.json({ draft, version, responseType, responseSequence });
 }

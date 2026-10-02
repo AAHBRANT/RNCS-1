@@ -62,3 +62,17 @@ test("histórico em texto para o agente traz data, selo e título", () => {
   assert.ok(text.includes("2026-08-10 — TRATATIVA — TRATATIVA V1 · Rascunho (Ana)"));
   assert.ok(text.includes("2026-08-18 — REPROVAÇÃO — Status: Respondida → Reprovada"));
 });
+
+test("ajuste do Planner aparece no histórico com a frase pedida e o motivo", () => {
+  const timeline = buildTimeline({
+    emails: [], versions: [], documents: [],
+    changes: [
+      { id: 90, field: "planner_prazo", oldValue: "21/12/2026", newValue: "23/12/2026 · Execução dos reparos · ajustado por Ana · motivo: prazo calculado antes da revisão", changedAt: "2026-12-05T12:00:00Z", userName: "Ana" },
+      { id: 91, field: "planner_conclusao", oldValue: "previsto 15/12/2026", newValue: "Mobilização: concluído em 13/12/2026", changedAt: "2026-12-13T12:00:00Z", userName: "Beto" },
+    ],
+  });
+  assert.deepEqual(timeline.map((item) => item.kind), ["PLANEJAMENTO", "PLANEJAMENTO"]);
+  assert.equal(timeline[0].title, "Prazo do Planner ajustado de 21/12/2026 para 23/12/2026 por Ana.");
+  assert.ok(timeline[0].detail?.includes("motivo: prazo calculado antes da revisão"));
+  assert.equal(timeline[1].title, "Mobilização: concluído em 13/12/2026");
+});

@@ -197,3 +197,73 @@ export const apiRateLimits = pgTable("api_rate_limits", {
   windowStart: timestamp("window_start", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
 });
+
+// Planner de prazos: cada versão de PAM analisada vira um registro, e cada prazo/etapa identificado vira um compromisso.
+export const plannerPams = pgTable("planner_pams", {
+  id: serial("id").primaryKey(),
+  rncId: integer("rnc_id").notNull().references(() => rncs.id),
+  responseVersionId: integer("response_version_id").notNull().references(() => rncResponseVersions.id),
+  pamVersion: integer("pam_version").notNull(),
+  sentAt: text("sent_at"),
+  sentSource: text("sent_source"),
+  sentEventId: integer("sent_event_id"),
+  sentAdjustedBy: text("sent_adjusted_by"),
+  sentAdjustReason: text("sent_adjust_reason"),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true, mode: "string" }),
+  confirmedBy: text("confirmed_by"),
+  status: text("status").notNull().default("ATIVO"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("planner_pams_version_unique").on(table.responseVersionId),
+  index("planner_pams_rnc_idx").on(table.rncId),
+]);
+
+export const plannerCommitments = pgTable("planner_commitments", {
+  id: serial("id").primaryKey(),
+  rncId: integer("rnc_id").notNull().references(() => rncs.id),
+  plannerPamId: integer("planner_pam_id").notNull().references(() => plannerPams.id),
+  pamVersion: integer("pam_version").notNull(),
+  orderIndex: integer("order_index").notNull().default(0),
+  kind: text("kind").notNull().default("ETAPA"),
+  source: text("source").notNull().default("PROPOSTA"),
+  title: text("title").notNull(),
+  originalText: text("original_text").notNull().default(""),
+  quantity: integer("quantity"),
+  unit: text("unit").notNull().default("CORRIDOS"),
+  baseType: text("base_type").notNull().default("PAM_SENT_DATE"),
+  fixedDate: text("fixed_date"),
+  milestoneLabel: text("milestone_label"),
+  milestoneDate: text("milestone_date"),
+  predecessorId: integer("predecessor_id"),
+  extracted: text("extracted").notNull().default("{}"),
+  needsReview: boolean("needs_review").notNull().default(false),
+  reviewReason: text("review_reason"),
+  baseDate: text("base_date"),
+  calculatedDue: text("calculated_due"),
+  originalDue: text("original_due"),
+  currentDue: text("current_due"),
+  isProjected: boolean("is_projected").notNull().default(false),
+  state: text("state").notNull().default("OK"),
+  manualAdjust: boolean("manual_adjust").notNull().default(false),
+  adjustedDue: text("adjusted_due"),
+  adjustedBy: text("adjusted_by"),
+  adjustedAt: timestamp("adjusted_at", { withTimezone: true, mode: "string" }),
+  adjustReason: text("adjust_reason"),
+  status: text("status").notNull().default("PENDENTE"),
+  completedAt: text("completed_at"),
+  completedBy: text("completed_by"),
+  completedRegisteredAt: timestamp("completed_registered_at", { withTimezone: true, mode: "string" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  index("planner_commitments_rnc_idx").on(table.rncId),
+  index("planner_commitments_pam_idx").on(table.plannerPamId),
+  index("planner_commitments_due_idx").on(table.currentDue),
+]);
+
+export const plannerSettings = pgTable("planner_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+});

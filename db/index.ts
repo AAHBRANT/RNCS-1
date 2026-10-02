@@ -254,6 +254,71 @@ async function initializeDatabaseOnce() {
   )
   UPDATE rnc_response_versions SET response_sequence = version
   WHERE EXISTS (SELECT 1 FROM claimed) AND response_sequence = 0`;
+  // Planner de prazos do PAM (aditivo: apenas tabelas novas).
+  await sql`CREATE TABLE IF NOT EXISTS planner_pams (
+    id SERIAL PRIMARY KEY,
+    rnc_id INTEGER NOT NULL REFERENCES rncs(id),
+    response_version_id INTEGER NOT NULL REFERENCES rnc_response_versions(id),
+    pam_version INTEGER NOT NULL,
+    sent_at TEXT,
+    sent_source TEXT,
+    sent_event_id INTEGER,
+    sent_adjusted_by TEXT,
+    sent_adjust_reason TEXT,
+    confirmed_at TIMESTAMPTZ,
+    confirmed_by TEXT,
+    status TEXT NOT NULL DEFAULT 'ATIVO',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS planner_pams_version_unique ON planner_pams(response_version_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS planner_pams_rnc_idx ON planner_pams(rnc_id)`;
+  await sql`CREATE TABLE IF NOT EXISTS planner_commitments (
+    id SERIAL PRIMARY KEY,
+    rnc_id INTEGER NOT NULL REFERENCES rncs(id),
+    planner_pam_id INTEGER NOT NULL REFERENCES planner_pams(id),
+    pam_version INTEGER NOT NULL,
+    order_index INTEGER NOT NULL DEFAULT 0,
+    kind TEXT NOT NULL DEFAULT 'ETAPA',
+    source TEXT NOT NULL DEFAULT 'PROPOSTA',
+    title TEXT NOT NULL,
+    original_text TEXT NOT NULL DEFAULT '',
+    quantity INTEGER,
+    unit TEXT NOT NULL DEFAULT 'CORRIDOS',
+    base_type TEXT NOT NULL DEFAULT 'PAM_SENT_DATE',
+    fixed_date TEXT,
+    milestone_label TEXT,
+    milestone_date TEXT,
+    predecessor_id INTEGER,
+    extracted TEXT NOT NULL DEFAULT '{}',
+    needs_review BOOLEAN NOT NULL DEFAULT FALSE,
+    review_reason TEXT,
+    base_date TEXT,
+    calculated_due TEXT,
+    original_due TEXT,
+    current_due TEXT,
+    is_projected BOOLEAN NOT NULL DEFAULT FALSE,
+    state TEXT NOT NULL DEFAULT 'OK',
+    manual_adjust BOOLEAN NOT NULL DEFAULT FALSE,
+    adjusted_due TEXT,
+    adjusted_by TEXT,
+    adjusted_at TIMESTAMPTZ,
+    adjust_reason TEXT,
+    status TEXT NOT NULL DEFAULT 'PENDENTE',
+    completed_at TEXT,
+    completed_by TEXT,
+    completed_registered_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`;
+  await sql`CREATE INDEX IF NOT EXISTS planner_commitments_rnc_idx ON planner_commitments(rnc_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS planner_commitments_pam_idx ON planner_commitments(planner_pam_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS planner_commitments_due_idx ON planner_commitments(current_due)`;
+  await sql`CREATE TABLE IF NOT EXISTS planner_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`;
   await sql`CREATE TABLE IF NOT EXISTS access_users (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
