@@ -7,8 +7,9 @@ import {
   sessionFromRequest,
   unauthorized,
 } from "../../../../../../lib/access-control";
-import { fillRncTemplate } from "../../../../../../lib/docx-template";
+import { fillPamTemplate, fillRncTemplate } from "../../../../../../lib/docx-template";
 import { enforceRateLimit } from "../../../../../../lib/rate-limit";
+import { buildPamReplacements, normalizeResponseType, sanitizePamFormData } from "../../../../../../lib/response-types";
 
 const DOCX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const MAX_PHOTO_SIZE = 800 * 1024;
@@ -55,15 +56,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (limited) return limited;
 
   const form = await request.formData();
-  let draft: Record<string, string>;
+  let draft: Record<string, unknown>;
   try {
-    draft = JSON.parse(String(form.get("draft") || "{}")) as Record<string, string>;
+    draft = JSON.parse(String(form.get("draft") || "{}")) as Record<string, unknown>;
   } catch {
     return Response.json({ error: "Os dados da tratativa são inválidos." }, { status: 400 });
   }
 
+  const responseType = normalizeResponseType(form.get("responseType"));
   const photos: Array<{ buffer: Buffer; contentType: "image/png" | "image/jpeg" } | null> = [];
-  for (let number = 1; number <= 4; number++) {
+  // O FG 06 não tem área de fotos; no PAM elas permanecem no sistema e no histórico.
+  for (let number = 1; responseType === "TRATATIVA" && number <= 4; number++) {
     const item = form.get(`photo${number}`);
     if (!(item instanceof File) || !item.size) { photos.push(null); continue; }
     if (!["image/png", "image/jpeg"].includes(item.type)) {
@@ -78,7 +81,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     });
   }
 
-  const replacements = {
+  const pamForm = sanitizePamFormData((draft as Record<string, unknown>).formData);
+  const replacements: Record<string, string> = responseType === "PAM" ? {} : {
     "[NÚMERO_RNC]": `${rnc.number}/${rnc.year}`,
     "[DATA_EMISSÃO]": formatDate(rnc.receivedAt),
     "[DATA_HOJE]": new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo" }).format(new Date()),
@@ -93,7 +97,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     "[LEGENDA3]": String(draft.photoLegend3 || ""),
     "[LEGENDA4]": String(draft.photoLegend4 || ""),
   };
-  const documentBuffer = await fillRncTemplate(replacements, photos);
+  const documentBuffer = responseType === "PAM"
+    ? await fillPamTemplate(buildPamReplacements(rnc, pamForm), pamForm.typologies)
+    : await fillRncTemplate(replacements, photos);
   if (documentBuffer.length > MAX_DOCUMENT_SIZE) {
     return Response.json(
       { error: "O Word gerado ultrapassou 4 MB. Reduza o tamanho das fotografias." },
@@ -103,12 +109,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
   const [currentVersion] = await db.select({ value: max(rncResponseDocuments.version) })
     .from(rncResponseDocuments)
-    .where(and(eq(rncResponseDocuments.rncId, rncId), eq(rncResponseDocuments.responseType, "TRATATIVA")));
+    .where(and(eq(rncResponseDocuments.rncId, rncId), eq(rncResponseDocuments.responseType, responseType)));
   const version = Number(currentVersion?.value || 0) + 1;
-  const fileName = `Tratativa_RNC_${rnc.number}_${rnc.year}.docx`;
+  const fileName = `${responseType === "PAM" ? "PAM" : "Tratativa"}_RNC_${rnc.number}_${rnc.year}.docx`;
   const [document] = await db.insert(rncResponseDocuments).values({
     rncId,
-    responseType: "TRATATIVA",
+    responseType,
     version,
     fileName,
     contentType: DOCX_CONTENT_TYPE,

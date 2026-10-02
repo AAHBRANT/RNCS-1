@@ -5,6 +5,8 @@ import path from "node:path";
 type TemplatePhoto = { buffer: Buffer; contentType: "image/png" | "image/jpeg" };
 
 const TEMPLATE_PATH = path.join(process.cwd(), "templates", "modelo-tratativa-rnc.docx");
+const PAM_TEMPLATE_PATH = path.join(process.cwd(), "templates", "modelo-pam-fg06.docx");
+const CHECKED_BOX_COLOR = "196B24";
 const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
 function decodeXml(value: string) {
@@ -66,7 +68,8 @@ function replaceText(xml: string, replacements: Record<string, string>) {
   return xml.replace(/<w:p\b[\s\S]*?<\/w:p>/g, (paragraph) => {
     let updated = paragraph;
     for (const [marker, value] of Object.entries(replacements)) {
-      while (decodeXml(updated.replace(/<[^>]+>/g, "")).includes(marker)) {
+      const occurrences = decodeXml(updated.replace(/<[^>]+>/g, "")).split(marker).length - 1;
+      for (let count = 0; count < occurrences; count++) {
         const next = replaceMarkerInParagraph(updated, marker, value);
         if (next === updated) break;
         updated = next;
@@ -170,5 +173,31 @@ export async function fillRncTemplate(
   zip.file("word/document.xml", documentXml);
   zip.file("word/_rels/document.xml.rels", relationsXml);
   zip.file("[Content_Types].xml", contentTypesXml);
+  return Buffer.from(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }));
+}
+
+// As caixas de tipologia do FG 06 são formas desenhadas (uma por rótulo). Marcar = preencher a forma,
+// o que preserva posição, tamanho e borda originais do modelo.
+export function markTypologyBoxes(xml: string, checkedLabels: string[]) {
+  if (!checkedLabels.length) return xml;
+  return xml.replace(/<w:p\b[\s\S]*?<\/w:p>/g, (paragraph) => {
+    if (!paragraph.includes("<wp:anchor")) return paragraph;
+    // Só <w:t>: o texto cru do parágrafo inclui números de posição (posOffset) da própria forma.
+    const visible = decodeXml([...paragraph.matchAll(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/g)].map((match) => match[1]).join("")).trim();
+    const label = checkedLabels.find((item) => visible === `${item}:`);
+    if (!label) return paragraph;
+    return paragraph
+      .replace("<a:noFill/>", `<a:solidFill><a:srgbClr val="${CHECKED_BOX_COLOR}"/></a:solidFill>`)
+      .replace('filled="f"', `filled="t" fillcolor="#${CHECKED_BOX_COLOR.toLowerCase()}"`);
+  });
+}
+
+export async function fillPamTemplate(replacements: Record<string, string>, checkedTypologies: string[]) {
+  const zip = await JSZip.loadAsync(await readFile(PAM_TEMPLATE_PATH));
+  const documentFile = zip.file("word/document.xml");
+  if (!documentFile) throw new Error("Modelo Word do PAM inválido.");
+  let documentXml = replaceText(await documentFile.async("string"), replacements);
+  documentXml = markTypologyBoxes(documentXml, checkedTypologies);
+  zip.file("word/document.xml", documentXml);
   return Buffer.from(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }));
 }

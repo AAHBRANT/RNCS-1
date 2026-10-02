@@ -487,7 +487,8 @@ export function ResponseWorkspace() {
     setBusy(true);
     try {
       const form = new FormData();
-      form.set("draft", JSON.stringify(draft));
+      form.set("draft", JSON.stringify({ ...draft, formData: responseType === "PAM" ? { ...pam, contract: rnc.contract || pam.contract } : undefined }));
+      form.set("responseType", responseType);
       photos.forEach((photo, index) => {
         if (photo) form.set(`photo${index + 1}`, photo);
       });
@@ -502,20 +503,25 @@ export function ResponseWorkspace() {
       const blob = await response.blob();
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = `Tratativa_RNC_${rnc.number}_${rnc.year}.docx`;
+      link.download = `${responseType === "PAM" ? "PAM" : "Tratativa"}_RNC_${rnc.number}_${rnc.year}.docx`;
       link.click();
       URL.revokeObjectURL(link.href);
 
       const saveResponse = await fetch(`/api/rncs/${rnc.id}/response`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...draft, selectedAttachments, responseType: "TRATATIVA" }),
+        body: JSON.stringify({
+          ...draft,
+          selectedAttachments,
+          responseType,
+          formData: responseType === "PAM" ? { ...pam, contract: rnc.contract || pam.contract } : undefined,
+        }),
       });
       const saveData = await saveResponse.json();
       if (!saveResponse.ok) throw new Error(saveData.error || "O Word foi gerado, mas os campos não foram salvos.");
       const [documentData, responseData] = await Promise.all([
-        fetch(`/api/rncs/${rnc.id}/response/document?type=TRATATIVA`).then((item) => item.json()),
-        fetch(`/api/rncs/${rnc.id}/response?type=TRATATIVA`).then((item) => item.json()),
+        fetch(`/api/rncs/${rnc.id}/response/document?type=${responseType}`).then((item) => item.json()),
+        fetch(`/api/rncs/${rnc.id}/response?type=${responseType}`).then((item) => item.json()),
       ]);
       setDocuments(documentData.documents || []);
       setVersions(responseData.versions || []);
@@ -673,7 +679,7 @@ export function ResponseWorkspace() {
           <EditorField title="Observações (se houver)" value={draft.observations} onChange={(value) => update("observations", value)} rows={5} />
           </>}
           <section className="template-fields">
-            <div><strong>Registro fotográfico da ação corretiva</strong><p>As fotografias e legendas serão inseridas no modelo Word.</p></div>
+            <div><strong>Registro fotográfico da ação corretiva</strong><p>{responseType === "PAM" ? "As fotografias e legendas ficam vinculadas a este PAM no sistema; o modelo FG 06 não possui área de fotos." : "As fotografias e legendas serão inseridas no modelo Word."}</p></div>
             <div className="photo-grid">
               {[0, 1, 2, 3].map((index) => {
                 const legendField = `photoLegend${index + 1}` as keyof Draft;
@@ -700,10 +706,10 @@ export function ResponseWorkspace() {
               />
               <small>Formato .docx · máximo 3 MB</small>
             </div>
-            <button className="button primary generate-word" type="button" onClick={generateDocument} disabled={busy || responseType === "PAM"}>
+            <button className="button primary generate-word" type="button" onClick={generateDocument} disabled={busy}>
               {busy ? "Gerando…" : "Gerar e baixar Word preenchido"}
             </button>
-            {responseType === "PAM" && <small className="template-note">A geração do Word do FG 06 será habilitada na próxima etapa. Por enquanto é possível anexar o .docx final do PAM.</small>}
+            {responseType === "PAM" && <small className="template-note">O Word é gerado a partir do modelo oficial FG 06. As fotografias permanecem registradas no sistema e não fazem parte desse modelo.</small>}
             <div className="word-versions">
               {documents.length ? documents.map((document, index) => <div key={document.id} className={index === 0 ? "latest" : ""}>
                 <span><strong>{index === 0 ? "Versão atual" : `Versão ${document.version}`}</strong><small>{document.fileName} · {(document.size / 1024).toFixed(0)} KB</small><small>{formatDate(document.createdAt)} · {document.uploadedBy}</small></span>

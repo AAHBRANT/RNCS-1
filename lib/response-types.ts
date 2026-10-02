@@ -100,3 +100,21 @@ export function typologiesFromRncType(rncType: string): PamTypology[] {
   const mapped = TYPOLOGY_BY_RNC_TYPE[rncType];
   return mapped ? [mapped] : [];
 }
+
+export function formatDateBr(value: string) {
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  return iso ? `${iso[3]}/${iso[2]}/${iso[1]}` : value;
+}
+
+// Marcadores literais do modelo oficial FG 06 (templates/modelo-pam-fg06.docx).
+export function buildPamReplacements(rnc: { number: string; year: number; contract?: string | null }, form: PamFormData) {
+  return {
+    "[RNC Nº]": `${rnc.number}/${rnc.year}`,
+    "[CONTRATO]": rnc.contract || "Não identificado",
+    "[Descrição da Ocorrência]": form.occurrenceDescription,
+    "[Descrição da Proposta de melhoria (com detalhamento das ações a serem tomadas)]": form.improvementProposal,
+    "[00/00/0000]": formatDateBr(form.date),
+    "[RESPONSÁVEL DA ÁREA INSPECIONADA]": form.responsible,
+    "[Prazo para o PAM]": form.deadline,
+  };
+}
