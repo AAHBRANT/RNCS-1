@@ -347,7 +347,7 @@ function extractAnalysisReviewers(text: string) {
   return [...values];
 }
 
-function analysisStatus(documentText: string): { status: string; confidence: Confidence } {
+export function analysisStatus(documentText: string): { status: string; confidence: Confidence } {
   if (!documentText.trim()) {
     return {
       status: "Retorno recebido — status a confirmar",
@@ -356,10 +356,11 @@ function analysisStatus(documentText: string): { status: string; confidence: Con
   }
   const text = documentText;
   const source = normalize(text);
-  if (/nao aprovad[oa]|reprovad[oa]|nao atendid[oa]|tratativa nao aceita|necessita correcao|revisar|reenviar|pendencia permanece/.test(source)) {
+  // Somente o feminino: o formulário FG 14 traz os rótulos "APROVADO" e "REPROVADO" em todos os documentos.
+  if (/nao aprovada|reprovada|nao atendida|tratativa nao aceita|necessita correcao|revisar|reenviar|pendencia permanece/.test(source)) {
     return { status: "Reprovada", confidence: { score: 5, reason: "Resultado identificado no documento anexo da análise." } };
   }
-  if (/tratativa aprovad[oa]|considerada atendid[oa]|sem pendencias|aprovad[oa]|atendid[oa]|sanad[oa]|encerrad[oa]/.test(source)) {
+  if (/tratativa aprovada|considerada atendida|sem pendencias|aprovada|atendida|sanada|encerrada/.test(source)) {
     return { status: "Aprovada", confidence: { score: 5, reason: "Resultado identificado no documento anexo da análise." } };
   }
   return {

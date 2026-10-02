@@ -233,16 +233,16 @@ function extractAnalysisStatus(text: string): {
 } {
   const normalized = normalizeForSearch(text);
   const rejectionPatterns = [
-    /\bTRATATIVA\s+REPROVAD[OA]\b/, /\bRESPOSTA\s+REPROVAD[OA]\b/, /\bNAO\s+APROVAD[OA]\b/,
-    /\bNAO\s+ATENDID[OA]\b/, /\bTRATATIVA\s+NAO\s+(?:ATENDID[OA]|ACEIT[OA])\b/,
+    /\bTRATATIVA\s+REPROVADA\b/, /\bRESPOSTA\s+REPROVADA\b/, /\bNAO\s+APROVADA\b/,
+    /\bNAO\s+ATENDIDA\b/, /\bTRATATIVA\s+NAO\s+(?:ATENDIDA|ACEITA)\b/,
     /\bPENDENCIA\s+PERMANECE\b/, /\bNECESSITA\s+(?:DE\s+)?CORRECAO\b/,
-    /\bDEVERA\s+SER\s+REENVIAD[OA]\b/, /\bSOLICITA-SE\s+REENVIO\b/,
+    /\bDEVERA\s+SER\s+REENVIADA\b/, /\bSOLICITA-SE\s+REENVIO\b/,
   ];
   const approvalPatterns = [
-    /\bTRATATIVA\s+APROVAD[OA]\b/, /\bRESPOSTA\s+APROVAD[OA]\b/,
-    /\bCONSIDERAD[OA]\s+ATENDID[OA]\b/, /\bTRATATIVA\s+ATENDID[OA]\b/,
-    /\bRNC\s+ATENDID[OA]\b/, /\bRNC\s+ENCERRAD[OA]\b/,
-    /\bPENDENCIA\s+SANAD[OA]\b/, /\bSEM\s+PENDENCIAS\b/,
+    /\bTRATATIVA\s+APROVADA\b/, /\bRESPOSTA\s+APROVADA\b/,
+    /\bCONSIDERADA\s+ATENDIDA\b/, /\bTRATATIVA\s+ATENDIDA\b/,
+    /\bRNC\s+ATENDIDA\b/, /\bRNC\s+ENCERRADA\b/,
+    /\bPENDENCIA\s+SANADA\b/, /\bSEM\s+PENDENCIAS\b/,
     /\bOBJETO\s+DE\s+APROVACAO\b/,
   ];
   for (const pattern of rejectionPatterns) {
@@ -253,8 +253,8 @@ function extractAnalysisStatus(text: string): {
     const match = normalized.match(pattern);
     if (match) return { status: "APROVADA", matchedText: match[0], confidence: "HIGH" };
   }
-  const rejected = /\bREPROVAD[OA]\b/.test(normalized);
-  const approved = /\bAPROVAD[OA]\b/.test(normalized);
+  const rejected = /\bREPROVADA\b/.test(normalized);
+  const approved = /\bAPROVADA\b/.test(normalized);
   if (rejected !== approved) {
     return {
       status: rejected ? "REPROVADA" : "APROVADA",
