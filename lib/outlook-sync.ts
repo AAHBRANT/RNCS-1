@@ -74,7 +74,8 @@ export function extractIdentities(subject: string, attachmentNames: string[], bo
   // a extração falhava silenciosamente. `(?<![a-zA-Z0-9])`/`(?![a-zA-Z0-9])`
   // tratam "_" como separador válido, igual espaço, ponto ou hífen.
   // Extract from subject: numbers without RNC keyword (soft extraction)
-  for (const match of subject.matchAll(/(?<![a-zA-Z0-9])(\d{1,6})\s*[./_-]\s*(20\d{2}|\d{2})(?![a-zA-Z0-9])/g)) add(match[1], match[2]);
+  // Datas completas (ex.: "21/08/2026") não são identidade de RNC: o dia/mês não pode virar número/ano.
+  for (const match of subject.matchAll(/(?<![a-zA-Z0-9]|\d\s*[./_-]\s*)(\d{1,6})\s*[./_-]\s*(20\d{2}|\d{2}(?!\s*[./_-]\s*\d))(?![a-zA-Z0-9])/g)) add(match[1], match[2]);
   // Extract from attachment names: REQUIRE "RNC" keyword nearby
   for (const name of attachmentNames) {
     for (const match of name.matchAll(/(?<![a-zA-Z0-9])RNCs?\s*(?:N[º°o.]?\s*)?[-–—_/:]?\s*(\d{1,6})\s*[./_-]\s*(20\d{2}|\d{2})(?![a-zA-Z0-9])/gi)) add(match[1], match[2]);
@@ -287,7 +288,7 @@ async function attachmentsForMessage(accessToken: string, message: GraphMessage)
       contentType: attachment.contentType || "application/octet-stream", size: attachment.size || 0,
     };
     const isPdf = /\.pdf$/i.test(info.name);
-    const safeToProcess = isPdf ? info.size <= 1_500_000 : info.size <= 12_000_000;
+    const safeToProcess = isPdf ? info.size <= 5_000_000 : info.size <= 12_000_000;
     if (isPdf && !safeToProcess) {
       info.pdfProcessing = {
         success: false,
@@ -295,7 +296,7 @@ async function attachmentsForMessage(accessToken: string, message: GraphMessage)
         fileName: info.name,
         pageCount: 0,
         information: null,
-        error: "PDF acima de 1,5 MB — mantido no histórico sem leitura automática para preservar a sincronização.",
+        error: "PDF acima de 5 MB — mantido no histórico sem leitura automática para preservar a sincronização.",
       };
     } else if (safeToProcess && /\.(pdf|docx|txt)$/i.test(info.name)) {
       const detail = await graph<GraphAttachment>(accessToken,
@@ -355,10 +356,10 @@ function analysisStatus(documentText: string): { status: string; confidence: Con
   }
   const text = documentText;
   const source = normalize(text);
-  if (/nao aprovada|reprovada|nao atendida|tratativa nao aceita|necessita correcao|revisar|reenviar|pendencia permanece/.test(source)) {
+  if (/nao aprovad[oa]|reprovad[oa]|nao atendid[oa]|tratativa nao aceita|necessita correcao|revisar|reenviar|pendencia permanece/.test(source)) {
     return { status: "Reprovada", confidence: { score: 5, reason: "Resultado identificado no documento anexo da análise." } };
   }
-  if (/tratativa aprovada|considerada atendida|sem pendencias|aprovada|atendida|sanada|encerrada/.test(source)) {
+  if (/tratativa aprovad[oa]|considerada atendid[oa]|sem pendencias|aprovad[oa]|atendid[oa]|sanad[oa]|encerrad[oa]/.test(source)) {
     return { status: "Aprovada", confidence: { score: 5, reason: "Resultado identificado no documento anexo da análise." } };
   }
   return {

@@ -11,7 +11,7 @@ export function analysisStatusFromEmailBody(body: string): AnalysisResult | null
   const source = normalizeAnalysisText(body);
   const rejected = [
     /reprovac(?:ao|oes) d(?:a|as) tratativa(?:s)?/,
-    /tratativa (?:foi )?(?:reprovada|nao aprovada|nao atendida|nao aceita)/,
+    /tratativa (?:foi )?(?:reprovad[oa]|nao aprovad[oa]|nao atendid[oa]|nao aceit[oa])/,
     /medidas nao atenderam ao solicitado/,
     /providencias (?:tomadas )?nao estao em conformidade/,
     /necessita (?:de )?correcao/,
@@ -28,10 +28,11 @@ export function analysisStatusFromEmailBody(body: string): AnalysisResult | null
   }
   const approved = [
     /aprovac(?:ao|oes) d(?:a|as) tratativa(?:s)?/,
-    /tratativa (?:foi )?aprovada/,
+    /tratativa (?:foi )?aprovad[oa]/,
     /medidas atenderam ao solicitado/,
     /providencias (?:tomadas )?estao em conformidade/,
-    /tratativa considerada atendida/,
+    /tratativa considerada atendid[oa]/,
+    /objeto de aprovac(?:ao|oes)/,
   ].some((pattern) => pattern.test(source));
   if (approved) {
     return {
