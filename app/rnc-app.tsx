@@ -6,6 +6,12 @@ import { Sidebar } from "./components/sidebar";
 import { Topbar } from "./components/topbar";
 import { deadlineResult, fmt, hasAnsweredStatus, hasBeenAnswered } from "../lib/rnc-deadline";
 import { useSidebarCollapse } from "../lib/use-sidebar-collapse";
+import {
+  RESPONSE_FLOW_STATUSES,
+  isAnsweredAwaitingStatus,
+  isDraftingStatus,
+  isRejectedStatus,
+} from "../lib/response-types";
 
 export type Work = { id: number; name: string; accessible: boolean };
 type Rnc = {
@@ -37,7 +43,7 @@ type OutlookDiagnosticEntry = {
   temAnexos: boolean; motivo: string; nivel: "descarte" | "sucesso"; [extra: string]: unknown;
 };
 
-const statusOptions = ["Recebida", "Em elaboração", "Respondida", "Aprovada", "Reprovada", "Reaberta", "Retorno recebido — status a confirmar", "Não identificado"];
+const statusOptions = ["Recebida", "Em elaboração", "Respondida", "Aprovada", "Reprovada", ...RESPONSE_FLOW_STATUSES, "Reaberta", "Retorno recebido — status a confirmar", "Não identificado"];
 const defaultTypeOptions = ["Engenharia", "Segurança do Trabalho", "Ambiental", "Social", "A classificar"];
 const PAGE_SIZE = 20;
 const labelByField: Record<string, string> = {
@@ -54,7 +60,7 @@ function attachmentsFromEvent(event: EmailEvent) {
 }
 function urgency(rnc: Rnc) {
   if (rnc.status === "Aprovada") return "approved";
-  if (rnc.status === "Reprovada") return "rejected";
+  if (isRejectedStatus(rnc.status)) return "rejected";
   if (rnc.sentAt) return (deadlineResult(rnc).delta ?? 0) > 0 ? "answered-late" : "answered";
   if (hasAnsweredStatus(rnc)) return "answered";
   if (rnc.status === "Não identificado" || rnc.type === "A classificar") return "unclassified";
@@ -256,10 +262,10 @@ export function RncApp() {
     const term = search.toLocaleLowerCase("pt-BR");
     const deadline = deadlineResult(r).delta;
     const cardMatches = cardFilter === "all"
-      || (cardFilter === "received" && (r.status === "Recebida" || r.status === "Em elaboração"))
-      || (cardFilter === "answered" && r.status === "Respondida")
+      || (cardFilter === "received" && isDraftingStatus(r.status))
+      || (cardFilter === "answered" && isAnsweredAwaitingStatus(r.status))
       || (cardFilter === "approved" && r.status === "Aprovada")
-      || (cardFilter === "rejected" && r.status === "Reprovada")
+      || (cardFilter === "rejected" && isRejectedStatus(r.status))
       || (cardFilter === "reopened" && r.status === "Reaberta")
       || (cardFilter === "pendingReview" && r.status === "Retorno recebido — status a confirmar")
       || (cardFilter === "sentOnTime" && hasBeenAnswered(r) && deadline !== null && deadline <= 0)
@@ -285,10 +291,10 @@ export function RncApp() {
 
   const stats = useMemo(() => ({
     total: rows.length,
-    received: rows.filter((r) => r.status === "Recebida" || r.status === "Em elaboração").length,
-    answered: rows.filter((r) => r.status === "Respondida").length,
+    received: rows.filter((r) => isDraftingStatus(r.status)).length,
+    answered: rows.filter((r) => isAnsweredAwaitingStatus(r.status)).length,
     approved: rows.filter((r) => r.status === "Aprovada").length,
-    rejected: rows.filter((r) => r.status === "Reprovada").length,
+    rejected: rows.filter((r) => isRejectedStatus(r.status)).length,
     reopened: rows.filter((r) => r.status === "Reaberta").length,
     pendingReview: rows.filter((r) => r.status === "Retorno recebido — status a confirmar").length,
     sentOnTime: rows.filter((r) => hasBeenAnswered(r) && deadlineResult(r).delta !== null && deadlineResult(r).delta! <= 0).length,

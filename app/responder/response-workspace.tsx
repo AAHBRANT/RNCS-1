@@ -5,6 +5,18 @@ import { Eye, FileText, History, TriangleAlert, X } from "lucide-react";
 import { Sidebar } from "../components/sidebar";
 import { Topbar } from "../components/topbar";
 import { useSidebarCollapse } from "../../lib/use-sidebar-collapse";
+import {
+  PAM_TYPOLOGIES,
+  RESPONSE_TYPES,
+  RESPONSE_TYPE_LABELS,
+  emptyPamFormData,
+  isRejectedStatus,
+  parsePamFormData,
+  responseLabel,
+  typologiesFromRncType,
+  type PamFormData,
+  type ResponseType,
+} from "../../lib/response-types";
 
 type RncListItem = {
   id: number; number: string; year: number; description: string; status: string;
@@ -30,7 +42,11 @@ type Draft = {
   internalComment: string; selectedAttachments: string; status: string; updatedAt?: string;
   updatedBy?: string;
 };
-type Version = { id: number; version: number; snapshot: string; createdAt: string; createdBy?: string };
+type Version = {
+  id: number; version: number; snapshot: string; createdAt: string; createdBy?: string;
+  responseType?: string; responseSequence?: number;
+};
+type DraftSummary = { responseType: string; status: string; updatedAt?: string };
 type WordDocument = {
   id: number; version: number; fileName: string; size: number; uploadedBy: string; createdAt: string;
 };
@@ -44,6 +60,26 @@ const emptyDraft: Draft = {
   internalComment: "",
   selectedAttachments: "[]", status: "Rascunho",
 };
+
+function defaultTypeForStatus(status?: string): ResponseType {
+  return status && /^PAM/.test(status) ? "PAM" : "TRATATIVA";
+}
+
+function todayIso() {
+  return new Date().toLocaleDateString("sv-SE");
+}
+
+function pamDefaultsFromRnc(rnc: RncDetail): PamFormData {
+  return {
+    contract: rnc.contract || "",
+    typologies: typologiesFromRncType(rnc.type),
+    occurrenceDescription: rnc.description || "",
+    improvementProposal: "",
+    date: todayIso(),
+    responsible: rnc.responseOwner || "",
+    deadline: "",
+  };
+}
 
 function formatDate(value?: string | null) {
   if (!value) return "—";
@@ -73,6 +109,14 @@ export function ResponseWorkspace() {
   const [emails, setEmails] = useState<EmailEvent[]>([]);
   const [versions, setVersions] = useState<Version[]>([]);
   const [documents, setDocuments] = useState<WordDocument[]>([]);
+  const [responseType, setResponseType] = useState<ResponseType>("TRATATIVA");
+  const [typeChosen, setTypeChosen] = useState(false);
+  const [draftSummaries, setDraftSummaries] = useState<DraftSummary[]>([]);
+  const [allVersions, setAllVersions] = useState<Version[]>([]);
+  const [pam, setPam] = useState<PamFormData>({ ...emptyPamFormData });
+  const [initialPam, setInitialPam] = useState<PamFormData>({ ...emptyPamFormData });
+  const [pendingType, setPendingType] = useState<ResponseType | null>(null);
+  const [switchConfirmType, setSwitchConfirmType] = useState<ResponseType | null>(null);
   const [photos, setPhotos] = useState<Array<File | null>>([null, null, null, null]);
   const [previewDocument, setPreviewDocument] = useState<WordDocument | null>(null);
   const [previewing, setPreviewing] = useState(false);
@@ -97,13 +141,20 @@ export function ResponseWorkspace() {
   const [initialPhotosSnapshot, setInitialPhotosSnapshot] = useState<Array<File | null>>([null, null, null, null]);
   const [initialSelectedAttachmentsSnapshot, setInitialSelectedAttachmentsSnapshot] = useState<string[]>([]);
   const [showConfirmDiscard, setShowConfirmDiscard] = useState(false);
-  const [pendingNavigation, setPendingNavigation] = useState<"rnc" | "panel" | "href" | "work" | null>(null);
+  const [pendingNavigation, setPendingNavigation] = useState<"rnc" | "panel" | "href" | "work" | "type" | null>(null);
   const [pendingRncId, setPendingRncId] = useState("");
   const [pendingHref, setPendingHref] = useState("");
   const [pendingWorkId, setPendingWorkId] = useState<number | null>(null);
   const [works, setWorks] = useState<Array<{ id: number; name: string; accessible: boolean }>>([]);
   const [activeWorkId, setActiveWorkId] = useState<number | null>(null);
   const documentInput = useRef<HTMLInputElement>(null);
+
+  function selectRnc(id: string, list: RncListItem[]) {
+    const item = list.find((entry) => String(entry.id) === id);
+    setSelectedId(id);
+    setResponseType(defaultTypeForStatus(item?.status));
+    setTypeChosen(false);
+  }
 
   async function loadRncs() {
     try {
@@ -118,6 +169,8 @@ export function ResponseWorkspace() {
         ? requested
         : available[0] ? String(available[0].id) : "";
       setSelectedId(initial || "");
+      setResponseType(defaultTypeForStatus(available.find((item: RncListItem) => String(item.id) === initial)?.status));
+      setTypeChosen(false);
     } catch {
       setNotice("Não foi possível carregar as RNCs.");
     }
@@ -165,14 +218,16 @@ export function ResponseWorkspace() {
     queueMicrotask(() => setBusy(true));
     window.history.replaceState({}, "", `/responder/editor?rnc=${selectedId}`);
     Promise.all([
-      fetch(`/api/rncs/${selectedId}/response`).then(async (response) => ({ response, data: await response.json() })),
-      fetch(`/api/rncs/${selectedId}/response/document`).then((response) => response.json()),
+      fetch(`/api/rncs/${selectedId}/response?type=${responseType}`).then(async (response) => ({ response, data: await response.json() })),
+      fetch(`/api/rncs/${selectedId}/response/document?type=${responseType}`).then((response) => response.json()),
     ])
       .then(([{ response, data }, documentData]) => {
         if (!response.ok) throw new Error(data.error || "Não foi possível abrir a RNC.");
         setRnc(data.rnc);
         setEmails(data.emails || []);
         setVersions(data.versions || []);
+        setAllVersions(data.allVersions || []);
+        setDraftSummaries(data.drafts || []);
         setAccessUser(data.user || null);
         setDocuments(documentData.documents || []);
         setPhotos([null, null, null, null]);
@@ -181,6 +236,11 @@ export function ResponseWorkspace() {
         setDraft(draftWithDefaults);
         setInitialDraftSnapshot(draftWithDefaults);
         setInitialPhotosSnapshot([null, null, null, null]);
+        const pamValue = responseType === "PAM"
+          ? (data.draft ? parsePamFormData(data.draft.formData) : pamDefaultsFromRnc(data.rnc))
+          : { ...emptyPamFormData };
+        setPam(pamValue);
+        setInitialPam(pamValue);
         try {
           const attachments = JSON.parse(loaded.selectedAttachments || "[]");
           setSelectedAttachments(attachments);
@@ -192,20 +252,28 @@ export function ResponseWorkspace() {
       })
       .catch((error) => setNotice(error instanceof Error ? error.message : "Falha ao abrir a RNC."))
       .finally(() => setBusy(false));
-  }, [selectedId]);
+  }, [selectedId, responseType]);
 
   const attachments = useMemo(() => attachmentsFromEmails(emails), [emails]);
 
   const hasUnsavedChanges = useMemo(() => {
-    if (JSON.stringify(initialDraftSnapshot) === JSON.stringify(emptyDraft)) return false;
+    const pamChanged = responseType === "PAM" && JSON.stringify(pam) !== JSON.stringify(initialPam);
+    if (JSON.stringify(initialDraftSnapshot) === JSON.stringify(emptyDraft)) return pamChanged;
     const draftChanged = JSON.stringify(draft) !== JSON.stringify(initialDraftSnapshot);
     const attachmentsChanged = JSON.stringify(selectedAttachments) !== JSON.stringify(initialSelectedAttachmentsSnapshot);
     const photosChanged = photos.some((photo, i) => {
       const initialPhoto = initialPhotosSnapshot[i];
       return (photo === null) !== (initialPhoto === null) || (photo !== null && initialPhoto !== null && photo.name !== initialPhoto.name);
     });
-    return draftChanged || attachmentsChanged || photosChanged;
-  }, [draft, selectedAttachments, photos, initialDraftSnapshot, initialSelectedAttachmentsSnapshot, initialPhotosSnapshot]);
+    return draftChanged || attachmentsChanged || photosChanged || pamChanged;
+  }, [draft, selectedAttachments, photos, pam, initialPam, responseType, initialDraftSnapshot, initialSelectedAttachmentsSnapshot, initialPhotosSnapshot]);
+
+  const showTypeSwitch = Boolean(rnc) && (
+    isRejectedStatus(rnc?.status || "")
+    || /^PAM/.test(rnc?.status || "")
+    || draftSummaries.some((item) => item.responseType === "PAM")
+  );
+  const showChooser = Boolean(rnc) && isRejectedStatus(rnc?.status || "") && !typeChosen;
 
   useEffect(() => {
     const handler = (event: BeforeUnloadEvent) => {
@@ -264,8 +332,22 @@ export function ResponseWorkspace() {
       `DOCUMENTO: ${attachment.name}`,
       attachment.extractedText?.slice(0, 10_000) || "Texto não disponível; considerar o documento indicado manualmente.",
     ].join("\n")).join("\n\n");
+    const isPam = responseType === "PAM";
+    const responseFields = isPam
+      ? [
+        `Tipologia da ocorrência: ${pam.typologies.join(", ") || "Ainda não selecionada"}`,
+        `Descrição da ocorrência (PAM): ${pam.occurrenceDescription || "Ainda não preenchida"}`,
+        `Descrição da proposta de melhoria: ${pam.improvementProposal || "Ainda não preenchida"}`,
+        `Prazo para o PAM: ${pam.deadline || "Ainda não definido"}`,
+      ]
+      : [
+        `Análise da ocorrência: ${draft.analysis || "Ainda não preenchida"}`,
+        `Medidas corretivas: ${draft.actionsTaken || "Ainda não preenchidas"}`,
+        `Observações: ${draft.observations || "Sem observações"}`,
+      ];
     return [
       "ELABORAÇÃO DE RESPOSTA TÉCNICA — RNC",
+      isPam ? "TIPO DE RESPOSTA: PAM – PLANO DE AÇÃO DE MELHORIA" : "TIPO DE RESPOSTA: TRATATIVA DA RNC",
       `RNC: ${rnc.number}/${rnc.year}`,
       `Obra: ${rnc.workName}`,
       `Descrição: ${rnc.description}`,
@@ -276,9 +358,7 @@ export function ResponseWorkspace() {
       `Responsável fiscal pela inspeção: ${rnc.inspectionOwner || "Não identificado"}`,
       `Contrato: ${rnc.contract || "Não identificado"}`,
       `Status atual: ${rnc.status}`,
-      `Análise da ocorrência: ${draft.analysis || "Ainda não preenchida"}`,
-      `Medidas corretivas: ${draft.actionsTaken || "Ainda não preenchidas"}`,
-      `Observações: ${draft.observations || "Sem observações"}`,
+      ...responseFields,
       selected.length ? `Documentos selecionados:\n${attachmentText}` : "Documentos selecionados: nenhum",
       "Elabore uma minuta técnica para revisão, sem enviar e-mail e sem inventar informações ausentes.",
     ].join("\n\n");
@@ -289,9 +369,35 @@ export function ResponseWorkspace() {
     setNotice("Contexto copiado. Abra o agente e cole as informações.");
   }
 
+  function applyTypeSwitch(type: ResponseType, skipConfirm = false) {
+    const targetHasDraft = draftSummaries.some((item) => item.responseType === type);
+    const otherInProgress = draftSummaries.some(
+      (item) => item.responseType !== type && item.status !== "Documento aprovado",
+    );
+    if (!skipConfirm && !targetHasDraft && otherInProgress) {
+      setSwitchConfirmType(type);
+      return;
+    }
+    setResponseType(type);
+    setTypeChosen(true);
+  }
+
+  function requestSwitchType(type: ResponseType) {
+    if (type === responseType && typeChosen) return;
+    if (hasUnsavedChanges && type !== responseType) {
+      setPendingNavigation("type");
+      setPendingType(type);
+      setShowConfirmDiscard(true);
+      return;
+    }
+    applyTypeSwitch(type);
+  }
+
   function handleConfirmDiscard() {
     if (pendingNavigation === "rnc" && pendingRncId) {
-      setSelectedId(pendingRncId);
+      selectRnc(pendingRncId, rncs);
+    } else if (pendingNavigation === "type" && pendingType) {
+      applyTypeSwitch(pendingType);
     } else if (pendingNavigation === "panel") {
       window.location.href = "/";
     } else if (pendingNavigation === "href" && pendingHref) {
@@ -304,6 +410,7 @@ export function ResponseWorkspace() {
     setPendingRncId("");
     setPendingHref("");
     setPendingWorkId(null);
+    setPendingType(null);
   }
 
   function handleNavClickCapture(event: MouseEvent<HTMLDivElement>) {
@@ -323,13 +430,21 @@ export function ResponseWorkspace() {
       const response = await fetch(`/api/rncs/${rnc.id}/response`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...draft, selectedAttachments }),
+        body: JSON.stringify({
+          ...draft,
+          selectedAttachments,
+          responseType,
+          formData: responseType === "PAM" ? { ...pam, contract: rnc.contract || pam.contract } : undefined,
+        }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Não foi possível salvar.");
-      setNotice(`Versão ${data.version} salva.`);
-      const refreshed = await fetch(`/api/rncs/${rnc.id}/response`).then((item) => item.json());
+      setNotice(`${responseLabel(responseType, data.version)} salvo.`);
+      const refreshed = await fetch(`/api/rncs/${rnc.id}/response?type=${responseType}`).then((item) => item.json());
       setVersions(refreshed.versions || []);
+      setAllVersions(refreshed.allVersions || []);
+      setDraftSummaries(refreshed.drafts || []);
+      setInitialPam(pam);
       setDraft((current) => {
         const updated = { ...current, updatedAt: data.draft.updatedAt };
         setInitialDraftSnapshot(updated);
@@ -349,13 +464,14 @@ export function ResponseWorkspace() {
     try {
       const form = new FormData();
       form.set("document", file);
+      form.set("responseType", responseType);
       const response = await fetch(`/api/rncs/${rnc.id}/response/document`, {
         method: "POST",
         body: form,
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Não foi possível anexar o documento.");
-      const refreshed = await fetch(`/api/rncs/${rnc.id}/response/document`).then((item) => item.json());
+      const refreshed = await fetch(`/api/rncs/${rnc.id}/response/document?type=${responseType}`).then((item) => item.json());
       setDocuments(refreshed.documents || []);
       setNotice(`Documento Word salvo como versão ${data.document.version}.`);
       if (documentInput.current) documentInput.current.value = "";
@@ -393,16 +509,18 @@ export function ResponseWorkspace() {
       const saveResponse = await fetch(`/api/rncs/${rnc.id}/response`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...draft, selectedAttachments }),
+        body: JSON.stringify({ ...draft, selectedAttachments, responseType: "TRATATIVA" }),
       });
       const saveData = await saveResponse.json();
       if (!saveResponse.ok) throw new Error(saveData.error || "O Word foi gerado, mas os campos não foram salvos.");
       const [documentData, responseData] = await Promise.all([
-        fetch(`/api/rncs/${rnc.id}/response/document`).then((item) => item.json()),
-        fetch(`/api/rncs/${rnc.id}/response`).then((item) => item.json()),
+        fetch(`/api/rncs/${rnc.id}/response/document?type=TRATATIVA`).then((item) => item.json()),
+        fetch(`/api/rncs/${rnc.id}/response?type=TRATATIVA`).then((item) => item.json()),
       ]);
       setDocuments(documentData.documents || []);
       setVersions(responseData.versions || []);
+      setAllVersions(responseData.allVersions || []);
+      setDraftSummaries(responseData.drafts || []);
       setDraft((current) => ({ ...current, updatedAt: saveData.draft.updatedAt }));
       setNotice(`Word preenchido, salvo e baixado como versão ${response.headers.get("x-document-version") || ""}.`);
     } catch (error) {
@@ -421,7 +539,12 @@ export function ResponseWorkspace() {
       setSelectedAttachments(attachments);
       setInitialDraftSnapshot(restored);
       setInitialSelectedAttachmentsSnapshot(attachments);
-      setNotice(`Versão ${version.version} carregada para edição. Salve para registrar uma nova versão.`);
+      if (responseType === "PAM") {
+        const restoredPam = parsePamFormData((snapshot as { formData?: string }).formData);
+        setPam(restoredPam);
+        setInitialPam(restoredPam);
+      }
+      setNotice(`${responseLabel(responseType, version.version)} carregado para edição. Salve para registrar uma nova versão.`);
     } catch {
       setNotice("Não foi possível carregar esta versão.");
     }
@@ -454,7 +577,7 @@ export function ResponseWorkspace() {
               setShowConfirmDiscard(true);
               setPendingRncId(event.target.value);
             } else {
-              setSelectedId(event.target.value);
+              selectRnc(event.target.value, rncs);
             }
           }}>
             {rncs.map((item) => <option key={item.id} value={item.id}>RNC {item.number}/{item.year} · {item.status}</option>)}
@@ -463,13 +586,41 @@ export function ResponseWorkspace() {
       </section>
 
       {!rnc && <section className="response-empty">{busy ? "Carregando RNC…" : "Não há RNC disponível para resposta."}</section>}
-      {rnc && <section className={`response-workspace${activePanel ? " panel-open" : ""}${activePanel === "viewer" ? " viewer-active" : ""}`}>
+      {rnc && showChooser && <section className="response-type-chooser">
+        <div>
+          <h2>Como deseja responder à reprovação?</h2>
+          <p>RNC {rnc.number}/{rnc.year} · {rnc.status}. A escolha define apenas o tipo da nova resposta: nenhuma resposta anterior é apagada ou ocultada.</p>
+          <div className="response-type-cards">
+            {RESPONSE_TYPES.map((type) => {
+              const summary = draftSummaries.find((item) => item.responseType === type);
+              const last = allVersions.find((item) => item.responseType === type);
+              return <button key={type} type="button" className="response-type-card" onClick={() => requestSwitchType(type)}>
+                <strong>{type === "PAM" ? "Plano de Ação de Melhoria – PAM (FG 06)" : "Nova Tratativa da RNC"}</strong>
+                <p>{type === "PAM"
+                  ? "Elabore o PAM no formulário FG 06, com descrição da ocorrência, proposta de melhoria, responsável e prazo."
+                  : "Responda com o formulário padrão de tratativa: análise da ocorrência, medidas corretivas e registro fotográfico."}</p>
+                <small>{summary ? `${responseLabel(type, last?.version || 1)} · ${summary.status}` : "Nenhuma resposta deste tipo ainda"}</small>
+              </button>;
+            })}
+          </div>
+        </div>
+      </section>}
+      {rnc && !showChooser && <section className={`response-workspace${activePanel ? " panel-open" : ""}${activePanel === "viewer" ? " viewer-active" : ""}`}>
         <div className="response-editor">
           {hasUnsavedChanges && (
             <div className="unsaved-warning">
               <span><TriangleAlert size={14} /> Há alterações não salvas. Clique em "Salvar nova versão" para registrar.</span>
             </div>
           )}
+          {showTypeSwitch && <div className="response-type-bar">
+            <span>Tipo de resposta</span>
+            <div className="response-type-switch" role="group" aria-label="Tipo de resposta">
+              {RESPONSE_TYPES.map((type) => <button key={type} type="button" className={type === responseType ? "active" : ""} aria-pressed={type === responseType} onClick={() => requestSwitchType(type)}>
+                {type === "PAM" ? "PAM (FG 06)" : RESPONSE_TYPE_LABELS[type]}
+              </button>)}
+            </div>
+            <small>O histórico das respostas anteriores é sempre preservado.</small>
+          </div>}
           <div className="editor-toolbar">
             <label>Situação do documento
               <select value={draft.status} onChange={(event) => update("status", event.target.value)}>
@@ -478,6 +629,36 @@ export function ResponseWorkspace() {
             </label>
             <span>{draft.updatedAt ? `Último salvamento: ${formatDate(draft.updatedAt)}${draft.updatedBy ? ` · ${draft.updatedBy}` : ""}` : "Ainda não salvo"}</span>
           </div>
+          {responseType === "PAM" ? <>
+            <section className="automatic-template-fields">
+              <div><span>Nº da RNC</span><strong>{rnc.number}/{rnc.year}</strong></div>
+              <div><span>Nº do contrato – obra</span><strong>{rnc.contract || "Não identificado no PDF"}</strong><small>{rnc.workName}</small></div>
+              <div><span>Tipo da RNC</span><strong>{rnc.type}</strong></div>
+              <div><span>Formulário</span><strong>FG 06 – Plano de Ação de Melhoria (PAM)</strong></div>
+            </section>
+            <section className="template-fields">
+              <div><strong>Tipologia da ocorrência</strong><p>Sugerida a partir da classificação da RNC. Ajuste se necessário.</p></div>
+              <div className="pam-typology">
+                {PAM_TYPOLOGIES.map((option) => <label key={option}>
+                  <input type="checkbox" checked={pam.typologies.includes(option)} onChange={(event) => setPam((current) => ({
+                    ...current,
+                    typologies: event.target.checked
+                      ? PAM_TYPOLOGIES.filter((item) => item === option || current.typologies.includes(item))
+                      : current.typologies.filter((item) => item !== option),
+                  }))} />
+                  {option}
+                </label>)}
+              </div>
+            </section>
+            <EditorField title="Descrição da ocorrência" value={pam.occurrenceDescription} onChange={(value) => setPam((current) => ({ ...current, occurrenceDescription: value }))} rows={6} required />
+            <small className="template-note">Editar aqui altera somente este PAM; a descrição original da RNC não é modificada.</small>
+            <EditorField title="Descrição da proposta de melhoria (com detalhamento das ações a serem tomadas)" value={pam.improvementProposal} onChange={(value) => setPam((current) => ({ ...current, improvementProposal: value }))} rows={14} required />
+            <div className="pam-grid">
+              <label className="editor-field"><span>Data</span><input type="date" value={pam.date} onChange={(event) => setPam((current) => ({ ...current, date: event.target.value }))} /></label>
+              <label className="editor-field"><span>Responsável</span><input type="text" value={pam.responsible} onChange={(event) => setPam((current) => ({ ...current, responsible: event.target.value }))} placeholder="Responsável da área inspecionada" /></label>
+              <label className="editor-field"><span>Prazo para o PAM</span><input type="text" value={pam.deadline} onChange={(event) => setPam((current) => ({ ...current, deadline: event.target.value }))} placeholder="Ex.: 15/11/2026 ou 30 dias" /></label>
+            </div>
+          </> : <>
           <section className="automatic-template-fields">
             <div><span>RNC Nº</span><strong>{rnc.number}/{rnc.year}</strong></div>
             <div><span>Data da emissão da RNC</span><strong>{formatDate(rnc.receivedAt)}</strong><small>Data do e-mail oficial recebido</small></div>
@@ -490,6 +671,7 @@ export function ResponseWorkspace() {
           <EditorField title="Análise da ocorrência" value={draft.analysis} onChange={(value) => update("analysis", value)} rows={8} required />
           <EditorField title="Medidas corretivas" value={draft.actionsTaken} onChange={(value) => update("actionsTaken", value)} rows={8} required />
           <EditorField title="Observações (se houver)" value={draft.observations} onChange={(value) => update("observations", value)} rows={5} />
+          </>}
           <section className="template-fields">
             <div><strong>Registro fotográfico da ação corretiva</strong><p>As fotografias e legendas serão inseridas no modelo Word.</p></div>
             <div className="photo-grid">
@@ -518,9 +700,10 @@ export function ResponseWorkspace() {
               />
               <small>Formato .docx · máximo 3 MB</small>
             </div>
-            <button className="button primary generate-word" type="button" onClick={generateDocument} disabled={busy}>
+            <button className="button primary generate-word" type="button" onClick={generateDocument} disabled={busy || responseType === "PAM"}>
               {busy ? "Gerando…" : "Gerar e baixar Word preenchido"}
             </button>
+            {responseType === "PAM" && <small className="template-note">A geração do Word do FG 06 será habilitada na próxima etapa. Por enquanto é possível anexar o .docx final do PAM.</small>}
             <div className="word-versions">
               {documents.length ? documents.map((document, index) => <div key={document.id} className={index === 0 ? "latest" : ""}>
                 <span><strong>{index === 0 ? "Versão atual" : `Versão ${document.version}`}</strong><small>{document.fileName} · {(document.size / 1024).toFixed(0)} KB</small><small>{formatDate(document.createdAt)} · {document.uploadedBy}</small></span>
@@ -568,9 +751,9 @@ export function ResponseWorkspace() {
               </div>
             </>}
             {activePanel === "versions" && <>
-              <h3>Histórico de versões</h3>
+              <h3>Histórico de versões · {RESPONSE_TYPE_LABELS[responseType]}</h3>
               {versions.length ? versions.map((version) => <button key={version.id} onClick={() => restoreVersion(version)}>
-                <strong>Versão {version.version}</strong><small>{new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(version.createdAt))}</small>{version.createdBy && <small>{version.createdBy}</small>}
+                <strong>{responseLabel(responseType, version.version)}</strong><small>{new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(version.createdAt))}</small>{version.createdBy && <small>{version.createdBy}</small>}
               </button>) : <p className="muted">Nenhuma versão salva.</p>}
             </>}
             {activePanel === "viewer" && <>
@@ -607,6 +790,18 @@ export function ResponseWorkspace() {
                 setPendingWorkId(null);
               }}>Cancelar</button>
               <button className="button primary" onClick={handleConfirmDiscard}>Descartar</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {switchConfirmType && (
+        <div className="modal-backdrop" onClick={() => setSwitchConfirmType(null)}>
+          <div className="modal-dialog" onClick={(event) => event.stopPropagation()}>
+            <h2>Criar nova resposta?</h2>
+            <p>Já existe uma resposta em elaboração. Deseja criar uma nova resposta no formato {switchConfirmType === "PAM" ? "PAM" : "Tratativa"}? A versão existente será preservada no histórico.</p>
+            <div className="modal-actions">
+              <button className="button secondary" onClick={() => setSwitchConfirmType(null)}>Cancelar</button>
+              <button className="button primary" onClick={() => { applyTypeSwitch(switchConfirmType, true); setSwitchConfirmType(null); }}>Criar nova resposta</button>
             </div>
           </div>
         </div>

@@ -45,7 +45,7 @@ const OFFICIAL_EMAIL = "contato@jampasustentavel.com";
 const RESPONDER_EMAIL = "isabella.marques@aahbrant.com";
 const AAHBRANT_DOMAIN = "@aahbrant.com";
 const ONLY_WORK = "Parque Socioambiental do Roger – Fase II";
-const protectedStatuses = new Set(["Aprovada", "Reprovada", "Retorno recebido — status a confirmar"]);
+const protectedStatuses = new Set(["Aprovada", "Reprovada", "Reprovada – aguardando nova resposta", "Retorno recebido — status a confirmar"]);
 
 function normalize(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();

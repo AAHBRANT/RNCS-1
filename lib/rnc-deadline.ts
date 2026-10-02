@@ -32,6 +32,9 @@ export function hasAnsweredStatus(rnc: DeadlineAwareRnc) {
     "Respondida",
     "Aprovada",
     "Reprovada",
+    "Reprovada – aguardando nova resposta",
+    "Tratativa reenviada – aguardando análise",
+    "PAM enviado – aguardando análise",
     "Retorno recebido — status a confirmar",
   ].includes(rnc.status);
 }

@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   emptyPamFormData,
+  isAnsweredAwaitingStatus,
+  isDraftingStatus,
+  isRejectedStatus,
   normalizeResponseType,
+  typologiesFromRncType,
   parsePamFormData,
   responseLabel,
   sanitizePamFormData,
@@ -41,4 +45,24 @@ test("JSON inválido ou vazio do PAM devolve o formulário vazio", () => {
   assert.deepEqual(parsePamFormData("{{"), emptyPamFormData);
   assert.deepEqual(parsePamFormData(null), emptyPamFormData);
   assert.deepEqual(parsePamFormData("{}"), emptyPamFormData);
+});
+
+test("status do fluxo de reprovação são agrupados sem quebrar os status antigos", () => {
+  assert.equal(isRejectedStatus("Reprovada"), true);
+  assert.equal(isRejectedStatus("Reprovada – aguardando nova resposta"), true);
+  assert.equal(isRejectedStatus("Aprovada"), false);
+  assert.equal(isDraftingStatus("Recebida"), true);
+  assert.equal(isDraftingStatus("PAM em elaboração"), true);
+  assert.equal(isDraftingStatus("PAM enviado – aguardando análise"), false);
+  assert.equal(isAnsweredAwaitingStatus("Respondida"), true);
+  assert.equal(isAnsweredAwaitingStatus("Tratativa reenviada – aguardando análise"), true);
+  assert.equal(isAnsweredAwaitingStatus("Tratativa em elaboração"), false);
+});
+
+test("tipologia do PAM é sugerida a partir da classificação da RNC", () => {
+  assert.deepEqual(typologiesFromRncType("Ambiental"), ["Meio Ambiente"]);
+  assert.deepEqual(typologiesFromRncType("Segurança do Trabalho"), ["Seg. Trabalho"]);
+  assert.deepEqual(typologiesFromRncType("Engenharia"), ["Engenharia"]);
+  assert.deepEqual(typologiesFromRncType("A classificar"), []);
+  assert.deepEqual(typologiesFromRncType("Execução"), []);
 });
