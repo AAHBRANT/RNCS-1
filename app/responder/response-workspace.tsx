@@ -17,6 +17,13 @@ import {
   type PamFormData,
   type ResponseType,
 } from "../../lib/response-types";
+import {
+  TIMELINE_BADGE,
+  buildTimeline,
+  describeVersion,
+  timelineToText,
+  type TimelineItem,
+} from "../../lib/rnc-timeline";
 
 type RncListItem = {
   id: number; number: string; year: number; description: string; status: string;
@@ -28,7 +35,10 @@ type RncDetail = RncListItem & {
 };
 type EmailEvent = {
   id: number; subject: string | null; eventType: string; occurredAt: string;
-  attachmentMetadata: string | null;
+  attachmentMetadata: string | null; summary?: string | null;
+};
+type AuditChange = {
+  id: number; field: string; oldValue: string | null; newValue: string | null; changedAt: string; userName?: string | null;
 };
 type Attachment = {
   id: string; name: string; extractedText?: string; extractionMethod?: string;
@@ -49,6 +59,7 @@ type Version = {
 type DraftSummary = { responseType: string; status: string; updatedAt?: string };
 type WordDocument = {
   id: number; version: number; fileName: string; size: number; uploadedBy: string; createdAt: string;
+  responseType?: string;
 };
 type AccessUser = { name: string; email: string; role: "admin" | "drafter" | "reviewer_approver" };
 
@@ -107,7 +118,6 @@ export function ResponseWorkspace() {
   const [selectedId, setSelectedId] = useState("");
   const [rnc, setRnc] = useState<RncDetail | null>(null);
   const [emails, setEmails] = useState<EmailEvent[]>([]);
-  const [versions, setVersions] = useState<Version[]>([]);
   const [documents, setDocuments] = useState<WordDocument[]>([]);
   const [responseType, setResponseType] = useState<ResponseType>("TRATATIVA");
   const [typeChosen, setTypeChosen] = useState(false);
@@ -115,6 +125,9 @@ export function ResponseWorkspace() {
   const [allVersions, setAllVersions] = useState<Version[]>([]);
   const [pam, setPam] = useState<PamFormData>({ ...emptyPamFormData });
   const [initialPam, setInitialPam] = useState<PamFormData>({ ...emptyPamFormData });
+  const [historyChanges, setHistoryChanges] = useState<AuditChange[]>([]);
+  const [allDocuments, setAllDocuments] = useState<WordDocument[]>([]);
+  const [viewingVersion, setViewingVersion] = useState<Version | null>(null);
   const [pendingType, setPendingType] = useState<ResponseType | null>(null);
   const [switchConfirmType, setSwitchConfirmType] = useState<ResponseType | null>(null);
   const [photos, setPhotos] = useState<Array<File | null>>([null, null, null, null]);
@@ -220,12 +233,14 @@ export function ResponseWorkspace() {
     Promise.all([
       fetch(`/api/rncs/${selectedId}/response?type=${responseType}`).then(async (response) => ({ response, data: await response.json() })),
       fetch(`/api/rncs/${selectedId}/response/document?type=${responseType}`).then((response) => response.json()),
+      fetch(`/api/rncs/${selectedId}/history`).then((response) => response.json()).catch(() => ({})),
     ])
-      .then(([{ response, data }, documentData]) => {
+      .then(([{ response, data }, documentData, historyData]) => {
         if (!response.ok) throw new Error(data.error || "Não foi possível abrir a RNC.");
+        setHistoryChanges(historyData?.changes || []);
+        setAllDocuments(historyData?.documents || []);
         setRnc(data.rnc);
         setEmails(data.emails || []);
-        setVersions(data.versions || []);
         setAllVersions(data.allVersions || []);
         setDraftSummaries(data.drafts || []);
         setAccessUser(data.user || null);
@@ -255,6 +270,30 @@ export function ResponseWorkspace() {
   }, [selectedId, responseType]);
 
   const attachments = useMemo(() => attachmentsFromEmails(emails), [emails]);
+
+  const timeline = useMemo(() => buildTimeline({
+    emails, versions: allVersions, documents: allDocuments, changes: historyChanges,
+  }), [emails, allVersions, allDocuments, historyChanges]);
+
+  async function refreshHistory(rncId: number) {
+    try {
+      const data = await fetch(`/api/rncs/${rncId}/history`).then((item) => item.json());
+      setHistoryChanges(data.changes || []);
+      setAllDocuments(data.documents || []);
+    } catch {
+      // O histórico é complementar; falha aqui não deve interromper o salvamento.
+    }
+  }
+
+  function openTimelineItem(item: TimelineItem) {
+    if (item.ref?.type === "version") {
+      const target = allVersions.find((version) => version.id === item.ref!.id);
+      if (target) setViewingVersion(target);
+    } else if (item.ref?.type === "document") {
+      const target = allDocuments.find((document) => document.id === item.ref!.id);
+      if (target) setPreviewDocument(target);
+    }
+  }
 
   const hasUnsavedChanges = useMemo(() => {
     const pamChanged = responseType === "PAM" && JSON.stringify(pam) !== JSON.stringify(initialPam);
@@ -345,6 +384,21 @@ export function ResponseWorkspace() {
         `Medidas corretivas: ${draft.actionsTaken || "Ainda não preenchidas"}`,
         `Observações: ${draft.observations || "Sem observações"}`,
       ];
+    const clip = (value: string, size: number) => (value.length > size ? `${value.slice(0, size)}…` : value);
+    const lastReturn = [...emails]
+      .filter((email) => email.eventType === "retorno_supervisao")
+      .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))[0];
+    const lastTratativa = allVersions.find((version) => version.responseType === "TRATATIVA");
+    const previousTratativa = lastTratativa ? describeVersion(lastTratativa) : null;
+    const pamContext = !isPam ? [] : [
+      lastReturn
+        ? `Reprovação anterior (${formatDate(lastReturn.occurredAt)} — ${lastReturn.subject || "retorno da Supervisão"}):\n${clip(lastReturn.summary || "Texto do retorno não disponível; consultar o documento no dossiê.", 3_000)}`
+        : "Reprovação anterior: retorno da Supervisão não localizado no histórico.",
+      previousTratativa
+        ? `Tratativa anterior (${previousTratativa.label}):\n${previousTratativa.fields.filter((field) => field.value && field.label !== "Comentário interno").map((field) => `${field.label}: ${clip(field.value, 2_000)}`).join("\n")}`
+        : "Tratativa anterior: nenhuma tratativa registrada.",
+      `Histórico da RNC:\n${timelineToText(timeline, (value) => formatDate(value)) || "Sem eventos registrados."}`,
+    ];
     return [
       "ELABORAÇÃO DE RESPOSTA TÉCNICA — RNC",
       isPam ? "TIPO DE RESPOSTA: PAM – PLANO DE AÇÃO DE MELHORIA" : "TIPO DE RESPOSTA: TRATATIVA DA RNC",
@@ -359,6 +413,7 @@ export function ResponseWorkspace() {
       `Contrato: ${rnc.contract || "Não identificado"}`,
       `Status atual: ${rnc.status}`,
       ...responseFields,
+      ...pamContext,
       selected.length ? `Documentos selecionados:\n${attachmentText}` : "Documentos selecionados: nenhum",
       "Elabore uma minuta técnica para revisão, sem enviar e-mail e sem inventar informações ausentes.",
     ].join("\n\n");
@@ -441,9 +496,9 @@ export function ResponseWorkspace() {
       if (!response.ok) throw new Error(data.error || "Não foi possível salvar.");
       setNotice(`${responseLabel(responseType, data.version)} salvo.`);
       const refreshed = await fetch(`/api/rncs/${rnc.id}/response?type=${responseType}`).then((item) => item.json());
-      setVersions(refreshed.versions || []);
       setAllVersions(refreshed.allVersions || []);
       setDraftSummaries(refreshed.drafts || []);
+      void refreshHistory(rnc.id);
       setInitialPam(pam);
       setDraft((current) => {
         const updated = { ...current, updatedAt: data.draft.updatedAt };
@@ -473,6 +528,7 @@ export function ResponseWorkspace() {
       if (!response.ok) throw new Error(data.error || "Não foi possível anexar o documento.");
       const refreshed = await fetch(`/api/rncs/${rnc.id}/response/document?type=${responseType}`).then((item) => item.json());
       setDocuments(refreshed.documents || []);
+      void refreshHistory(rnc.id);
       setNotice(`Documento Word salvo como versão ${data.document.version}.`);
       if (documentInput.current) documentInput.current.value = "";
     } catch (error) {
@@ -524,9 +580,9 @@ export function ResponseWorkspace() {
         fetch(`/api/rncs/${rnc.id}/response?type=${responseType}`).then((item) => item.json()),
       ]);
       setDocuments(documentData.documents || []);
-      setVersions(responseData.versions || []);
       setAllVersions(responseData.allVersions || []);
       setDraftSummaries(responseData.drafts || []);
+      void refreshHistory(rnc.id);
       setDraft((current) => ({ ...current, updatedAt: saveData.draft.updatedAt }));
       setNotice(`Word preenchido, salvo e baixado como versão ${response.headers.get("x-document-version") || ""}.`);
     } catch (error) {
@@ -734,7 +790,7 @@ export function ResponseWorkspace() {
         <aside className={`dossier-panel${activePanel ? " open" : ""}`}>
           <div className="dossier-panel-rail">
             <button type="button" className={activePanel === "documents" ? "active" : ""} title="Documentos do dossiê" onClick={() => togglePanel("documents")}><FileText size={18} /></button>
-            <button type="button" className={activePanel === "versions" ? "active" : ""} title="Histórico de versões" onClick={() => togglePanel("versions")}><History size={18} /></button>
+            <button type="button" className={activePanel === "versions" ? "active" : ""} title="Histórico da RNC" onClick={() => togglePanel("versions")}><History size={18} /></button>
             <button type="button" className={activePanel === "viewer" ? "active" : ""} title="Visualizar PDF" onClick={() => togglePanel("viewer")}><Eye size={18} /></button>
           </div>
           {activePanel && <div className="dossier-panel-content">
@@ -755,12 +811,38 @@ export function ResponseWorkspace() {
                   </div>;
                 }) : <p className="muted">Nenhum documento vinculado.</p>}
               </div>
+              <h4>Respostas geradas (Word)</h4>
+              <div className="evidence-list">
+                {allDocuments.length ? allDocuments.map((document) => {
+                  const type: ResponseType = document.responseType === "PAM" ? "PAM" : "TRATATIVA";
+                  return <div className="evidence-item" key={document.id}>
+                    <span><span className={`rt-badge rt-badge-${type}`}>{TIMELINE_BADGE[type]}</span><strong>{document.fileName}</strong><small>{responseLabel(type, document.version)} · {formatDate(document.createdAt)}</small></span>
+                    <div className="word-actions">
+                      <button type="button" className="button secondary" onClick={() => setPreviewDocument(document)}>Visualizar PDF</button>
+                      <a className="button secondary link-button" href={`/api/rncs/${rnc.id}/response/document?document=${document.id}`}>Baixar Word</a>
+                    </div>
+                  </div>;
+                }) : <p className="muted">Nenhum Word gerado ou anexado ainda.</p>}
+              </div>
             </>}
             {activePanel === "versions" && <>
-              <h3>Histórico de versões · {RESPONSE_TYPE_LABELS[responseType]}</h3>
-              {versions.length ? versions.map((version) => <button key={version.id} onClick={() => restoreVersion(version)}>
-                <strong>{responseLabel(responseType, version.version)}</strong><small>{new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(version.createdAt))}</small>{version.createdBy && <small>{version.createdBy}</small>}
-              </button>) : <p className="muted">Nenhuma versão salva.</p>}
+              <h3>Histórico da RNC</h3>
+              <p className="dossier-panel-description">Todas as respostas, retornos, documentos e mudanças de status, em ordem cronológica. Nada é ocultado ao trocar de Tratativa para PAM.</p>
+              <ol className="rt-list">
+                {timeline.length ? timeline.map((item) => {
+                  const clickable = Boolean(item.ref);
+                  const content = <>
+                    <span className="rt-meta"><span className={`rt-badge rt-badge-${item.kind}`}>{TIMELINE_BADGE[item.kind]}</span><small>{formatDate(item.at)}</small></span>
+                    <strong>{item.title}</strong>
+                    {item.detail && <small>{item.detail}</small>}
+                  </>;
+                  return <li key={item.key}>
+                    {clickable
+                      ? <button type="button" className="rt-item clickable" onClick={() => openTimelineItem(item)}>{content}</button>
+                      : <div className="rt-item">{content}</div>}
+                  </li>;
+                }) : <p className="muted">Nenhum evento registrado.</p>}
+              </ol>
             </>}
             {activePanel === "viewer" && <>
               <h3>Visualizar PDF</h3>
@@ -800,6 +882,28 @@ export function ResponseWorkspace() {
           </div>
         </div>
       )}
+      {viewingVersion && (() => {
+        const view = describeVersion(viewingVersion);
+        return <div className="modal-backdrop" onClick={() => setViewingVersion(null)}>
+          <div className="modal-dialog version-viewer" role="dialog" aria-modal="true" aria-label={`${view.label} — somente leitura`} onClick={(event) => event.stopPropagation()}>
+            <header>
+              <span className={`rt-badge rt-badge-${view.type}`}>{TIMELINE_BADGE[view.type]}</span>
+              <h2>{view.label}</h2>
+              <small>Somente leitura · salvo em {new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(view.savedAt))}{viewingVersion.createdBy ? ` · ${viewingVersion.createdBy}` : ""} · Situação: {view.status}</small>
+            </header>
+            <dl>
+              {view.fields.map((field) => <div key={field.label}><dt>{field.label}</dt><dd>{field.value || "—"}</dd></div>)}
+            </dl>
+            <p className="template-note">Fotografias não são guardadas por versão (apenas as legendas); elas constam nos documentos Word gerados, disponíveis na lista de documentos.</p>
+            <div className="modal-actions">
+              <button className="button secondary" onClick={() => setViewingVersion(null)}>Fechar</button>
+              {view.type === responseType
+                ? <button className="button primary" onClick={() => { restoreVersion(viewingVersion); setViewingVersion(null); }}>Carregar para edição</button>
+                : <button className="button primary" onClick={() => { const target = view.type; setViewingVersion(null); requestSwitchType(target); }}>Abrir {view.type === "PAM" ? "PAM" : "Tratativa"}</button>}
+            </div>
+          </div>
+        </div>;
+      })()}
       {switchConfirmType && (
         <div className="modal-backdrop" onClick={() => setSwitchConfirmType(null)}>
           <div className="modal-dialog" onClick={(event) => event.stopPropagation()}>

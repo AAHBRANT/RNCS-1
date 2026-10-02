@@ -340,3 +340,28 @@ body.sidebar-collapsed .app-shell { grid-template-columns:64px 1fr; }
 .pam-typology input { accent-color:#670000; }
 .pam-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
 @media (max-width:760px) { .response-type-cards,.pam-grid { grid-template-columns:1fr; } .response-type-chooser { padding:0 14px; } }
+
+/* Histórico unificado da RNC e leitura de versões */
+.rt-list { list-style:none; margin:14px 0 0; padding:0; display:grid; gap:8px; }
+.rt-item { display:grid; gap:4px; width:100%; padding:10px 11px; text-align:left; border:1px solid #e5eae7; border-radius:9px; background:#fff; color:var(--ink); font:inherit; }
+.rt-item.clickable { cursor:pointer; }
+.rt-item.clickable:hover { border-color:#670000; }
+.rt-item strong { font-size:11px; line-height:1.35; overflow-wrap:anywhere; }
+.rt-item small { color:#839089; font-size:9px; overflow-wrap:anywhere; }
+.rt-meta { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.rt-badge { display:inline-block; padding:2px 7px; border-radius:999px; background:#eef1ef; color:#4d5a53; font-size:8px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
+.rt-badge-TRATATIVA { background:#e3f1ea; color:#15583e; }
+.rt-badge-PAM { background:#f3e3e3; color:#670000; }
+.rt-badge-REPROVACAO { background:#670000; color:#fff; }
+.rt-badge-APROVACAO { background:#1f6f50; color:#fff; }
+.rt-badge-DOCUMENTO { background:#e4ebf5; color:#2c4a73; }
+.rt-badge-ENVIO { background:#e8eef9; color:#2c4a73; }
+.rt-badge-RETORNO { background:#f7efd6; color:#6b5200; }
+.version-viewer { width:min(760px,94vw); max-height:88vh; overflow:auto; }
+.version-viewer header { display:grid; gap:6px; margin-bottom:14px; }
+.version-viewer header h2 { margin:0; }
+.version-viewer header small { color:var(--muted); font-size:10px; }
+.version-viewer dl { display:grid; gap:12px; margin:0 0 14px; }
+.version-viewer dt { color:#5c6962; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }
+.version-viewer dd { margin:4px 0 0; padding:10px 11px; border:1px solid #e5eae7; border-radius:9px; background:#f8faf9; font-size:12px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; }
+.version-viewer .template-note { margin:0 0 18px; }
