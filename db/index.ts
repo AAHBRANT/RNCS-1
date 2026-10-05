@@ -333,6 +333,20 @@ async function initializeDatabaseOnce() {
     updated_by TEXT NOT NULL DEFAULT '',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`;
+  await sql`CREATE TABLE IF NOT EXISTS rnc_groups (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    comment TEXT NOT NULL DEFAULT '',
+    created_by TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by TEXT NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`;
+  await sql`CREATE TABLE IF NOT EXISTS rnc_group_members (
+    rnc_id INTEGER PRIMARY KEY REFERENCES rncs(id),
+    group_id INTEGER NOT NULL REFERENCES rnc_groups(id)
+  )`;
+  await sql`CREATE INDEX IF NOT EXISTS rnc_group_members_group_idx ON rnc_group_members(group_id)`;
   await sql`CREATE TABLE IF NOT EXISTS access_users (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,

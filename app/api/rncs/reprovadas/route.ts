@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { ensureDatabase, getDb } from "../../../../db";
-import { emailEvents, rncComments, rncs, works } from "../../../../db/schema";
+import { emailEvents, rncComments, rncGroupMembers, rncGroups, rncs, works } from "../../../../db/schema";
 import { accessControlEnabled, sessionFromRequest, unauthorized } from "../../../../lib/access-control";
 import { canSeeRnc } from "../../../../lib/planner-api";
 import { rejectionReason, type ReasonEvent } from "../../../../lib/rnc-reprovadas";
@@ -23,6 +23,9 @@ export async function GET(request: Request) {
         .from(emailEvents).where(and(inArray(emailEvents.rncId, ids), eq(emailEvents.eventType, "retorno_supervisao")))
       : [];
     const comments = ids.length ? await db.select().from(rncComments).where(inArray(rncComments.rncId, ids)) : [];
+    const members = ids.length ? await db.select().from(rncGroupMembers).where(inArray(rncGroupMembers.rncId, ids)) : [];
+    const groups = await db.select({ id: rncGroups.id, name: rncGroups.name }).from(rncGroups);
+    const groupByRnc = new Map(members.map((member) => [member.rncId, member.groupId]));
     const eventsByRnc = new Map<number, ReasonEvent[]>();
     for (const event of events) eventsByRnc.set(event.rncId, [...(eventsByRnc.get(event.rncId) ?? []), event]);
     const commentByRnc = new Map(comments.map((comment) => [comment.rncId, comment]));
@@ -33,11 +36,13 @@ export async function GET(request: Request) {
         return {
           ...rnc,
           reason: rejectionReason(rnc, eventsByRnc.get(rnc.id) ?? []),
+          groupId: groupByRnc.get(rnc.id) ?? null,
           comment: comment?.comment ?? "",
           commentBy: comment?.updatedBy ?? "",
           commentAt: comment?.updatedAt ?? null,
         };
       }),
+      groups: groups.sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
       user: accessControlEnabled() ? session : null,
     });
   } catch (error) {

@@ -281,3 +281,19 @@ export const rncComments = pgTable("rnc_comments", {
   updatedBy: text("updated_by").notNull().default(""),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 });
+
+export const rncGroups = pgTable("rnc_groups", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  comment: text("comment").notNull().default(""),
+  createdBy: text("created_by").notNull().default(""),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedBy: text("updated_by").notNull().default(""),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+});
+
+// Cada RNC pertence a no máximo um grupo.
+export const rncGroupMembers = pgTable("rnc_group_members", {
+  rncId: integer("rnc_id").primaryKey().references(() => rncs.id),
+  groupId: integer("group_id").notNull().references(() => rncGroups.id),
+}, (table) => [index("rnc_group_members_group_idx").on(table.groupId)]);
