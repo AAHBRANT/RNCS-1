@@ -3,6 +3,8 @@ import { accessControlEnabled, parseSession, SESSION_COOKIE } from "./lib/access
 
 export function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
+  // Exact, read-only endpoint authenticates its own scoped service credential.
+  if (path === "/api/integrations/gquali/rncs") return NextResponse.next();
   if (path === "/acesso" || path === "/selecionar-obra" || path.startsWith("/api/auth/") || path.startsWith("/api/works/")) return NextResponse.next();
   if (!accessControlEnabled()) return NextResponse.next();
   const session = parseSession(request.cookies.get(SESSION_COOKIE)?.value);
