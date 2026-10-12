@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 
 // Separate service credential. Never inherit the interactive setup/admin session.
-export function authorizeGquali(request: Request, env = process.env): number[] | null {
+export function authorizeGquali(request: Request, env: Record<string, string | undefined> = process.env): number[] | null {
   const token = env.GQUALI_READ_TOKEN || "";
   const configured = (env.GQUALI_WORK_IDS || "").split(",").map(value => value.trim());
   if (token.length < 32 || !configured.length || configured.some(value => !/^[1-9]\d*$/.test(value))) return null;
